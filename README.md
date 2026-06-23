@@ -42,14 +42,27 @@ See `docs/figures/Fig1_pipeline.*` and `Fig2_reconciliation.*` for schematics.
 
 ## Installation
 
-Python ≥ 3.9 with `biopython` and `pandas`. External tools on `PATH`:
-**BLAST+**, **Exonerate**, **HMMER** (`hmmsearch`), **ARAGORN**.
+Plastanno needs Python ≥ 3.9 with `biopython` and `pandas`, plus four external
+tools on `PATH`: **BLAST+**, **Exonerate**, **HMMER** (`hmmsearch`) and
+**ARAGORN** (optionally **tRNAscan-SE** for the `--trnascan` option).
+
+The easiest way is a single conda environment with the Python dependencies and
+all external tools together:
 
 ```bash
-# example with conda
-conda create -n plastanno python=3.10 biopython pandas
-conda install -n plastanno -c bioconda blast exonerate hmmer aragorn
+# create the environment (Python deps + all external tools)
+conda create -n plastanno -c bioconda -c conda-forge \
+    python=3.10 biopython pandas blast exonerate hmmer aragorn
 conda activate plastanno
+
+# optional: extra tRNA source used by --trnascan
+conda install -n plastanno -c bioconda trnascan-se
+```
+
+Then verify everything is found (modules, databases, external tools):
+
+```bash
+bash diagnose.sh
 ```
 
 The Exonerate executable is resolved from `$PLASTANNO_EXONERATE`, then `PATH`,
