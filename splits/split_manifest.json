@@ -1,0 +1,27 @@
+{
+  "created": "2026-06-19T08:11:33",
+  "seed": 20260619,
+  "heldout_frac": 0.3,
+  "n_total": 12581,
+  "n_dev": 8807,
+  "n_heldout": 3774,
+  "forced_dev": [
+    "NC_053537"
+  ],
+  "heldout_by_mode": {
+    "ANOMALOUS": 3,
+    "IR_LACKING": 154,
+    "REDUCED": 11,
+    "STANDARD": 3604,
+    "UNKNOWN": 2
+  },
+  "dev_by_mode": {
+    "ANOMALOUS": 6,
+    "IR_LACKING": 361,
+    "REDUCED": 27,
+    "STANDARD": 8410,
+    "UNKNOWN": 3
+  },
+  "dev_sha256": "29192f7859397d4605101a77e081db81808163088d4276dc13da4366cd6eff3c",
+  "heldout_sha256": "772c0967bffe080e82471ef8ab6c9b1b3da6b685a6c96e4dd5578d95a035e7f3"
+}

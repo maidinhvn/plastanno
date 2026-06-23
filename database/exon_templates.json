@@ -1,0 +1,165 @@
+{
+ "rps12": {
+  "n_exons": 3,
+  "exon_lens": [
+   114,
+   232,
+   34
+  ],
+  "n": 504
+ },
+ "rps16": {
+  "n_exons": 2,
+  "exon_lens": [
+   218,
+   40
+  ],
+  "n": 270
+ },
+ "atpF": {
+  "n_exons": 2,
+  "exon_lens": [
+   410,
+   145
+  ],
+  "n": 340
+ },
+ "rpoC1": {
+  "n_exons": 2,
+  "exon_lens": [
+   1617,
+   435
+  ],
+  "n": 288
+ },
+ "ycf3": {
+  "n_exons": 3,
+  "exon_lens": [
+   153,
+   228,
+   126
+  ],
+  "n": 335
+ },
+ "clpP": {
+  "n_exons": 3,
+  "exon_lens": [
+   228,
+   292,
+   71
+  ],
+  "n": 262
+ },
+ "petB": {
+  "n_exons": 2,
+  "exon_lens": [
+   6,
+   642
+  ],
+  "n": 329
+ },
+ "petD": {
+  "n_exons": 2,
+  "exon_lens": [
+   8,
+   475
+  ],
+  "n": 303
+ },
+ "rpl16": {
+  "n_exons": 2,
+  "exon_lens": [
+   399,
+   9
+  ],
+  "n": 311
+ },
+ "rpl2": {
+  "n_exons": 2,
+  "exon_lens": [
+   431,
+   400
+  ],
+  "n": 579
+ },
+ "ndhB": {
+  "n_exons": 2,
+  "exon_lens": [
+   756,
+   756
+  ],
+  "n": 598
+ },
+ "ndhA": {
+  "n_exons": 2,
+  "exon_lens": [
+   540,
+   552
+  ],
+  "n": 319
+ },
+ "?": {
+  "n_exons": 2,
+  "exon_lens": [
+   410,
+   393
+  ],
+  "n": 21
+ },
+ "ycf2": {
+  "n_exons": 2,
+  "exon_lens": [
+   5033,
+   1843
+  ],
+  "n": 7
+ },
+ "ycf66": {
+  "n_exons": 2,
+  "exon_lens": [
+   106,
+   242
+  ],
+  "n": 9
+ },
+ "psbA": {
+  "n_exons": 2,
+  "exon_lens": [
+   342,
+   723
+  ],
+  "n": 13
+ },
+ "psaA": {
+  "n_exons": 2,
+  "exon_lens": [
+   1800,
+   459
+  ],
+  "n": 5
+ },
+ "psbC": {
+  "n_exons": 2,
+  "exon_lens": [
+   757,
+   667
+  ],
+  "n": 10
+ },
+ "psaB": {
+  "n_exons": 2,
+  "exon_lens": [
+   689,
+   1517
+  ],
+  "n": 8
+ },
+ "atpB": {
+  "n_exons": 2,
+  "exon_lens": [
+   765,
+   682
+  ],
+  "n": 5
+ }
+}

@@ -1,0 +1,34 @@
+# Generated benchmark + evaluation outputs
+bench_runs/
+plastanno_output/
+
+# Manual development snapshots (.bak, .bak2 ... .bakN)
+*.bak*
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Large databases (BLAST binary indices + sequence sources). Their exact state is
+# recorded in database_CHECKSUMS.sha256 (tracked) and they are rebuildable via
+# scripts/build/. gene_catalog.json — small config that drives ORF validation and
+# locus selection — is kept under version control.
+database/*
+!database/gene_catalog.json
+!database/exon_templates.json
+!database/boundary_db
+
+# Claude Code local (personal) settings
+.claude/settings.local.json
+
+# Local development scratch
+rebuild_dev/
+
+# review staging area (not part of the repo itself)
+forgit/
+
+# internal / not for public repo
+CLAUDE.md
+.claude/
+WHAT_GOES_WHERE.md

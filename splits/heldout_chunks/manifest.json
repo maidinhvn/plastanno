@@ -1,0 +1,129 @@
+{
+  "seed": 20260621,
+  "nchunks": 10,
+  "total": 3774,
+  "n_families": 307,
+  "stratified_by": "family",
+  "chunks": [
+    {
+      "chunk": 0,
+      "n": 382,
+      "sha256": "b13ef5c002254e1fe97c5c7cae49d4624422dda2f50a3fdfcfd159ff8436427c",
+      "top_families": {
+        "Poaceae": 27,
+        "Asteraceae": 24,
+        "Rosaceae": 20,
+        "Orchidaceae": 16,
+        "Brassicaceae": 12
+      }
+    },
+    {
+      "chunk": 1,
+      "n": 380,
+      "sha256": "b899e4620395096794dfcc8ee11c7d1601ad23c7454c9fa83634817c1c68f01f",
+      "top_families": {
+        "Poaceae": 27,
+        "Asteraceae": 23,
+        "Rosaceae": 20,
+        "Orchidaceae": 17,
+        "Brassicaceae": 12
+      }
+    },
+    {
+      "chunk": 2,
+      "n": 380,
+      "sha256": "e0ae435ae02632603e7c42055ddce24dcdc1c65ee4b1c6c25bfefd2545a8d132",
+      "top_families": {
+        "Poaceae": 27,
+        "Asteraceae": 24,
+        "Rosaceae": 20,
+        "Orchidaceae": 17,
+        "Brassicaceae": 12
+      }
+    },
+    {
+      "chunk": 3,
+      "n": 376,
+      "sha256": "cb672180c697fa446c150c818d7d2eeae54268fab6a508ca34a05f5f8f439398",
+      "top_families": {
+        "Poaceae": 27,
+        "Asteraceae": 24,
+        "Rosaceae": 19,
+        "Orchidaceae": 16,
+        "Fabaceae": 12
+      }
+    },
+    {
+      "chunk": 4,
+      "n": 380,
+      "sha256": "42bffc22f819f74b108a3b061f0d92d4769801d689d817fcbca4720fbb2671b4",
+      "top_families": {
+        "Poaceae": 27,
+        "Asteraceae": 24,
+        "Rosaceae": 19,
+        "Orchidaceae": 16,
+        "Fabaceae": 12
+      }
+    },
+    {
+      "chunk": 5,
+      "n": 381,
+      "sha256": "a04792aeaab7b856920d4a32f18ab6f6cb9346c37c10c29b0fda6d1610a6c76d",
+      "top_families": {
+        "Poaceae": 27,
+        "Asteraceae": 24,
+        "Rosaceae": 19,
+        "Orchidaceae": 16,
+        "Brassicaceae": 12
+      }
+    },
+    {
+      "chunk": 6,
+      "n": 376,
+      "sha256": "009a8664fd3b71b1fe8bbb8f43f027d64e7bb44a2f5e604df7f8c26324ec452a",
+      "top_families": {
+        "Poaceae": 27,
+        "Asteraceae": 24,
+        "Rosaceae": 19,
+        "Orchidaceae": 16,
+        "Brassicaceae": 12
+      }
+    },
+    {
+      "chunk": 7,
+      "n": 370,
+      "sha256": "680b09ccfee8b3b5bf7091e161278b2d41027672676f71178e9447222e065991",
+      "top_families": {
+        "Poaceae": 27,
+        "Asteraceae": 24,
+        "Rosaceae": 19,
+        "Orchidaceae": 16,
+        "Brassicaceae": 12
+      }
+    },
+    {
+      "chunk": 8,
+      "n": 371,
+      "sha256": "83a20fe4b8afec863106658577311afbc0a903fbafa2b0a66ff7de4822436314",
+      "top_families": {
+        "Poaceae": 27,
+        "Asteraceae": 24,
+        "Rosaceae": 20,
+        "Orchidaceae": 16,
+        "Brassicaceae": 12
+      }
+    },
+    {
+      "chunk": 9,
+      "n": 378,
+      "sha256": "667ac30e46a694ee9307e3ff1a6e683906a54c8ee7ecfae98fc6b042c98d4266",
+      "top_families": {
+        "Poaceae": 27,
+        "Asteraceae": 24,
+        "Rosaceae": 20,
+        "Orchidaceae": 16,
+        "Brassicaceae": 12
+      }
+    }
+  ]
+}

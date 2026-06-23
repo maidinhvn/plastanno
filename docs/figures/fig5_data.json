@@ -1,0 +1,73 @@
+{
+  "n_refs": 12581,
+  "ir_annotated": 7656,
+  "ir_absent": 4925,
+  "ir_absent_pct": 39.1,
+  "rrna_total_spellings": 128,
+  "trna_total_spellings": 679,
+  "cds_total_spellings": 1356,
+  "rrna_top_spellings": [
+    [
+      "rrn16",
+      8897
+    ],
+    [
+      "rrn5",
+      8879
+    ],
+    [
+      "rrn23",
+      8834
+    ],
+    [
+      "rrn4.5",
+      8823
+    ],
+    [
+      "rrn5s",
+      2208
+    ],
+    [
+      "rrn23s",
+      2200
+    ],
+    [
+      "rrn4.5s",
+      2149
+    ],
+    [
+      "rrn16s",
+      2108
+    ],
+    [
+      "5s ribosomal rna",
+      1220
+    ],
+    [
+      "16s ribosomal rna",
+      1216
+    ],
+    [
+      "23s ribosomal rna",
+      1216
+    ],
+    [
+      "4.5s ribosomal rna",
+      1176
+    ]
+  ],
+  "rrna_core_variant_counts": {
+    "16": 17,
+    "23": 14,
+    "26": 1,
+    "3": 3,
+    "4": 1,
+    "4.5": 12,
+    "4.55": 1,
+    "45": 1,
+    "5": 16,
+    "5.5": 1,
+    "7": 3,
+    "other": 58
+  }
+}
