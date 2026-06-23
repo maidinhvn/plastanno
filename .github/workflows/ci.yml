@@ -16,33 +16,36 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     defaults:
       run:
-        shell: bash -el {0}        # login shell so `conda activate` works
+        shell: bash -l {0}
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up conda (Miniconda + bioconda/conda-forge)
         uses: conda-incubator/setup-miniconda@v3
         with:
-          activate-environment: plastanno
-          python-version: "3.10"
+          auto-update-conda: true
           channels: conda-forge,bioconda
           channel-priority: strict
-          auto-activate-base: false
 
-      - name: Install dependencies (Python + external tools)
-        run: conda install -y biopython pandas blast exonerate hmmer aragorn
-
-      - name: Check external tools are on PATH
+      - name: Create environment (Python + external tools)
         run: |
-          which blastn makeblastdb exonerate hmmsearch aragorn
-          exonerate --version | head -1
-          aragorn -h 2>&1 | head -1 || true
+          conda create -n plastanno -y \
+            python=3.10 biopython pandas blast exonerate hmmer aragorn
+
+      # Everything below uses `conda run -n plastanno` so it never depends on
+      # shell activation persisting between steps.
+      - name: Check external tools are installed
+        run: |
+          conda run -n plastanno bash -c '
+            for t in blastn makeblastdb exonerate hmmsearch aragorn; do
+              p=$(command -v "$t") && echo "$t -> $p" || { echo "MISSING: $t"; exit 1; }
+            done'
 
       - name: Download reference databases (from Zenodo)
-        run: bash scripts/get_database.sh
+        run: conda run -n plastanno bash scripts/get_database.sh
 
       - name: Annotate the bundled example
-        run: python3 plastanno.py run example/NC_053537.1.fasta --output out --no-plot --threads 2
+        run: conda run -n plastanno python3 plastanno.py run example/NC_053537.1.fasta --output out --no-plot --threads 2
 
       - name: Verify output
         run: |
