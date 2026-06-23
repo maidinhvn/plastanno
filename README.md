@@ -42,6 +42,10 @@ See `docs/figures/Fig1_pipeline.*` and `Fig2_reconciliation.*` for schematics.
 
 ## Installation
 
+**Supported platforms:** Linux and macOS. Windows is not supported directly (the
+external tools and the helper shell scripts assume a Unix environment) — use
+**WSL2** as a workaround.
+
 Plastanno needs Python ≥ 3.9 with `biopython` and `pandas`, plus four external
 tools on `PATH`: **BLAST+**, **Exonerate**, **HMMER** (`hmmsearch`) and
 **ARAGORN** (optionally **tRNAscan-SE** for the `--trnascan` option).
