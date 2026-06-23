@@ -18,10 +18,12 @@ else
 fi
 
 echo "[2/3] Verifying checksum ..."
-if command -v md5sum >/dev/null 2>&1; then
+if command -v md5sum >/dev/null 2>&1; then            # Linux
     echo "$MD5  $TAR" | md5sum -c - || { echo "ERROR: checksum mismatch." >&2; exit 1; }
+elif command -v md5 >/dev/null 2>&1; then             # macOS
+    [ "$(md5 -q "$TAR")" = "$MD5" ] || { echo "ERROR: checksum mismatch." >&2; exit 1; }
 else
-    echo "  (md5sum not found — skipping checksum)"
+    echo "  (no md5 tool found — skipping checksum)"
 fi
 
 echo "[3/3] Unpacking into database/ ..."

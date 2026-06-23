@@ -14,8 +14,8 @@
 set -u
 export PATH=/data06/users/vutrinh/.conda/envs/plastannot_env/bin:$PATH
 cd "$(dirname "$0")/../.."
-EVAL=${PLASTANNO_DATA:-/data06/users/vutrinh/Apiales_Plastomes_20260514}/eval_v2_raw
-RAW=${PLASTANNO_DATA:-/data06/users/vutrinh/Apiales_Plastomes_20260514}/rawdata
+EVAL=/data06/users/vutrinh/Apiales_Plastomes_20260514/eval_v2_raw
+RAW=/data06/users/vutrinh/Apiales_Plastomes_20260514/rawdata
 PGA=/data06/users/vutrinh/plastome_analysis/scripts/PGA/PGA.pl
 H=bench_runs/h2h
 mkdir -p "$H/plast_out" "$H/pga_out" "$H/pt"
@@ -30,7 +30,7 @@ cat splits/h2h_subset.txt | xargs -P 24 -I{} bash -c \
 run_pga () {
   local a="$1" d="$H/pt/$1"
   mkdir -p "$d/r" "$d/t" "$d/o"
-  for r in $(grep -P "^$a\t" splits/h2h_refmap.tsv | cut -f2 | tr ',' ' '); do
+  for r in $(awk -F'\t' -v a="$a" '$1==a{print $2}' splits/h2h_refmap.tsv | tr ',' ' '); do
     [ -f "$RAW/$r.gb" ] && cp "$RAW/$r.gb" "$d/r/"; done
   cp "$EVAL/$a.fasta" "$d/t/"
   perl "$PGA" -r "$d/r" -t "$d/t" -o "$d/o" -f circular >"$d/log" 2>&1
