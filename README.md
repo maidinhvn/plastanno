@@ -136,13 +136,19 @@ panel and length templates, and `gene_catalog.json`.
 GitHub's per-file size limit makes them unsuitable for version control. Only the
 small runtime configs (`gene_catalog.json`, `boundary_db/`, `exon_templates.json`)
 are tracked. To run the tool after cloning, obtain the full `database/` in one of
-two ways:
+three ways:
 
-1. **Download the prebuilt archive** from Zenodo
-   ([doi.org/10.5281/zenodo.20807994](https://doi.org/10.5281/zenodo.20807994)) and
-   unpack `plastanno-database.tar.gz` so its contents sit in `database/`, or
-2. **Rebuild it** with `python3 scripts/build/build_all.py` (see that script's
-   header for inputs).
+1. **Automatic (recommended):** run
+   ```bash
+   bash scripts/get_database.sh
+   ```
+   which downloads the archive from Zenodo, verifies its checksum, and unpacks it
+   into `database/`.
+2. **Manual:** download `plastanno-database.tar.gz` from Zenodo
+   ([doi.org/10.5281/zenodo.20807994](https://doi.org/10.5281/zenodo.20807994))
+   and `tar xzf plastanno-database.tar.gz` so its contents sit in `database/`.
+3. **Rebuild:** `python3 scripts/build/build_all.py` (see that script's header
+   for inputs).
 
 For a ready-to-run copy that already bundles the databases, use the release
 tarball instead of cloning.
