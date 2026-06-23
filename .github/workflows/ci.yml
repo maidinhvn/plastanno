@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Test on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    defaults:
+      run:
+        shell: bash -el {0}        # login shell so `conda activate` works
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up conda (Miniconda + bioconda/conda-forge)
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          activate-environment: plastanno
+          python-version: "3.10"
+          channels: conda-forge,bioconda
+          channel-priority: strict
+          auto-activate-base: false
+
+      - name: Install dependencies (Python + external tools)
+        run: conda install -y biopython pandas blast exonerate hmmer aragorn
+
+      - name: Check external tools are on PATH
+        run: |
+          which blastn makeblastdb exonerate hmmsearch aragorn
+          exonerate --version | head -1
+          aragorn -h 2>&1 | head -1 || true
+
+      - name: Download reference databases (from Zenodo)
+        run: bash scripts/get_database.sh
+
+      - name: Annotate the bundled example
+        run: python3 plastanno.py run example/NC_053537.1.fasta --output out --no-plot --threads 2
+
+      - name: Verify output
+        run: |
+          test -f out/NC_053537.1.gb
+          test -f out/NC_053537.1.gff3
+          test -f out/NC_053537.1.report
+          genes=$(grep -oE 'Total[[:space:]]*:[[:space:]]*[0-9]+' out/NC_053537.1.report | grep -oE '[0-9]+' | head -1)
+          echo "Annotated genes: $genes"
+          test "$genes" -gt 100
+          echo "OK: example annotated successfully on ${{ matrix.os }}"

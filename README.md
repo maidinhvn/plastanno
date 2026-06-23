@@ -2,6 +2,7 @@
 
 **A hybrid, self-evaluating chloroplast-genome (plastome) annotator.**
 
+[![CI](https://github.com/maidinhvn/plastanno/actions/workflows/ci.yml/badge.svg)](https://github.com/maidinhvn/plastanno/actions/workflows/ci.yml)
 [![Reference databases (Zenodo)](https://zenodo.org/badge/DOI/10.5281/zenodo.20807994.svg)](https://doi.org/10.5281/zenodo.20807994)
 
 Given a plastome FASTA, Plastanno predicts CDS, tRNA and rRNA features and writes
