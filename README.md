@@ -2,6 +2,8 @@
 
 **A hybrid, self-evaluating chloroplast-genome (plastome) annotator.**
 
+[![Reference databases (Zenodo)](https://zenodo.org/badge/DOI/10.5281/zenodo.20807994.svg)](https://doi.org/10.5281/zenodo.20807994)
+
 Given a plastome FASTA, Plastanno predicts CDS, tRNA and rRNA features and writes
 GenBank, GFF3, FASTA and report outputs — plus a circular plastome map. Its
 defining design is a **hybrid of two independent annotation engines whose results
@@ -123,8 +125,9 @@ small runtime configs (`gene_catalog.json`, `boundary_db/`, `exon_templates.json
 are tracked. To run the tool after cloning, obtain the full `database/` in one of
 two ways:
 
-1. **Download the prebuilt archive** from Zenodo (DOI in the citation/Releases)
-   and unpack it into `database/`, or
+1. **Download the prebuilt archive** from Zenodo
+   ([doi.org/10.5281/zenodo.20807994](https://doi.org/10.5281/zenodo.20807994)) and
+   unpack `plastanno-database.tar.gz` so its contents sit in `database/`, or
 2. **Rebuild it** with `python3 scripts/build/build_all.py` (see that script's
    header for inputs).
 
@@ -140,7 +143,6 @@ Quality is measured by gene-by-gene comparison against reference GenBank files
 # Score one predicted .gb against a reference .gb
 python3 scripts/benchmark/benchmark_gene_by_gene.py reference.gb predicted.gb --tol 60 --sim 0.6
 
-# Benchmark scripts read the reference dataset from $PLASTANNO_DATA (set it to your copy).
 # Aggregate F1 over a sample
 python3 scripts/benchmark/multi_genome_bench.py --n 120 --workers 16
 ```
@@ -152,7 +154,9 @@ runtime < 60 s per genome.
 
 ## Citation
 
-If you use Plastanno, please cite the manuscript (in preparation; see `docs/`).
+If you use Plastanno, please cite the manuscript (in preparation; see `docs/`) and
+the reference-database archive on Zenodo:
+[doi.org/10.5281/zenodo.20807994](https://doi.org/10.5281/zenodo.20807994).
 
 ## License
 
