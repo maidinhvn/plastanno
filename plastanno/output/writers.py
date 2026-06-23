@@ -279,6 +279,21 @@ def write_report(annotations, accession, genome_len,
         for region, (s,e) in ir_boundaries.items():
             f.write(f"  {region}: {s:,} - {e:,} ({e-s:,} bp)\n")
 
+        # Warnings for atypical structures (manual curation advised)
+        warns = []
+        if not any(r in ir_boundaries for r in ("IRa", "IRb")):
+            warns.append("No inverted repeat detected; genome annotated as single-copy. "
+                         "If a standard quadripartite plastome was expected, inspect the IR "
+                         "manually; if this is an IR-lacking or reduced plastome (e.g. a "
+                         "heterotrophic/parasitic taxon), features near the former IR may need curation.")
+        if genome_len < 80_000:
+            warns.append(f"Genome length {genome_len:,} bp is unusually short (< 80 kb); "
+                         f"possibly a reduced plastome — manual curation advised.")
+        if warns:
+            f.write("\nWarnings:\n")
+            for w in warns:
+                f.write(f"  ! {w}\n")
+
         # Top relatives
         f.write(f"\nTop relatives:\n")
         for r in relatives[:5]:
