@@ -17,22 +17,23 @@ def _rc(s): return s.translate(_COMP)[::-1]
 MIN_INTRON = 100
 PAD        = 75
 JW         = 15      # junction search window (bp)
+from ..paths import config_dir
 _HERE = os.path.dirname(__file__)
-_BDB  = os.path.join(_HERE, "..", "..", "database", "boundary_db", "exons")
+_BDB  = str(config_dir() / "boundary_db" / "exons")
 _META = None
 
 _TPL = None
 def _meta():
     global _META
     if _META is None:
-        try: _META = json.load(open(os.path.join(_HERE, "..", "..", "database", "boundary_db", "meta.json")))
+        try: _META = json.load(open(str(config_dir() / "boundary_db" / "meta.json")))
         except Exception: _META = {}
     return _META
 
 def _tpl(gene):
     global _TPL
     if _TPL is None:
-        try: _TPL = json.load(open(os.path.join(_HERE, "..", "..", "database", "exon_templates.json")))
+        try: _TPL = json.load(open(str(config_dir() / "exon_templates.json")))
         except Exception: _TPL = {}
     return (_TPL.get(gene) or {}).get("exon_lens")
 

@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "plastanno"
+version = "2.0.0"
+description = "Dual-evidence, confidence-aware plastid genome (plastome) annotation"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Trinh Hoai Vu", email = "thvu@agu.edu.vn" }]
+keywords = ["plastome", "chloroplast", "genome annotation", "bioinformatics"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+]
+dependencies = [
+    "biopython",
+    "pandas",
+    "matplotlib",
+    "platformdirs",
+]
+# The external binaries (BLAST+, Exonerate, HMMER, ARAGORN) are NOT pip deps —
+# conda/bioconda provides them as run requirements (see packaging/meta.yaml).
+
+[project.scripts]
+plastanno = "plastanno.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/maidinhvn/plastanno"
+Database = "https://doi.org/10.5281/zenodo.20807994"
+
+[tool.setuptools]
+# auxiliary dev/benchmark scripts and the big database are intentionally excluded
+py-modules = []
+
+[tool.setuptools.packages.find]
+include = ["plastanno*"]
+
+[tool.setuptools.package-data]
+# small runtime configs only (~440 KB); the ~266 MB DB is fetched via `plastanno fetch-db`
+plastanno = ["data/*.json", "data/boundary_db/*"]

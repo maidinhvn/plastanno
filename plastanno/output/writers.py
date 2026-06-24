@@ -425,20 +425,24 @@ def write_all(annotations, genome_seq, accession,
     # break the annotation outputs, so it is fully guarded.
     if not no_plot:
         try:
-            import importlib.util
             from Bio import SeqIO as _SeqIO
-            _mp = Path(__file__).resolve().parents[2] / "scripts" / "viz" / "plastome_circular_map.py"
-            if _mp.exists():
+            try:
+                # primary: in-package module (works after pip/conda install)
+                from plastanno.viz import plastome_circular_map as _pcm
+            except Exception:
+                # dev fallback: load from the source-tree scripts/viz copy
+                import importlib.util
+                _mp = Path(__file__).resolve().parents[2] / "scripts" / "viz" / "plastome_circular_map.py"
                 _spec = importlib.util.spec_from_file_location("_pcm", _mp)
                 _pcm = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(_pcm)
-                _rec = next(_SeqIO.parse(str(gb_path), "genbank"))
-                _ir = _pcm.ir_from_blast(str(_rec.seq).upper()) or _pcm.ir_from_annotation(_rec)
-                _org = (_rec.annotations.get("organism") or "").strip() or accession
-                _pcm.draw_map(_rec, _ir, _org, 180, str(out_dir / f"{prefix}_map"), dpi=300)
-                for _ext in (".png", ".pdf", ".svg"):
-                    _p = out_dir / f"{prefix}_map{_ext}"
-                    if _p.exists() and _p not in files:
-                        files.append(_p)
+            _rec = next(_SeqIO.parse(str(gb_path), "genbank"))
+            _ir = _pcm.ir_from_blast(str(_rec.seq).upper()) or _pcm.ir_from_annotation(_rec)
+            _org = (_rec.annotations.get("organism") or "").strip() or accession
+            _pcm.draw_map(_rec, _ir, _org, 180, str(out_dir / f"{prefix}_map"), dpi=300)
+            for _ext in (".png", ".pdf", ".svg"):
+                _p = out_dir / f"{prefix}_map{_ext}"
+                if _p.exists() and _p not in files:
+                    files.append(_p)
         except Exception as _e:
             print(f"      (circular map skipped: {_e})")
 

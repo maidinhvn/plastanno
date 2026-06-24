@@ -1,0 +1,32 @@
+{
+ "atpF": {
+  "n_exons": 2
+ },
+ "ndhB": {
+  "n_exons": 2
+ },
+ "ycf3": {
+  "n_exons": 3
+ },
+ "petB": {
+  "n_exons": 2
+ },
+ "ndhA": {
+  "n_exons": 2
+ },
+ "clpP": {
+  "n_exons": 3
+ },
+ "rps16": {
+  "n_exons": 2
+ },
+ "petD": {
+  "n_exons": 2
+ },
+ "rpl16": {
+  "n_exons": 2
+ },
+ "rpoC1": {
+  "n_exons": 2
+ }
+}

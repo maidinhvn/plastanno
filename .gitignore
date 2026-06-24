@@ -32,3 +32,9 @@ forgit/
 CLAUDE.md
 .claude/
 WHAT_GOES_WHERE.md
+
+# Python build artifacts
+build/
+dist/
+*.egg-info/
+*.whl

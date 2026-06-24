@@ -13,14 +13,15 @@ from .core.reconcile import reconcile
 
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
-BASE_DIR    = Path(__file__).parent.parent / "database"
+from .paths import db_root, config_dir
+BASE_DIR    = db_root()
 BLAST_DB    = str(BASE_DIR / "blast_db"    / "genus_reps")
 PROTEIN_DB  = str(BASE_DIR / "protein_db")
 TRNA_DB_DIR = BASE_DIR / "trna_db"
 EXON_DB     = str(BASE_DIR / "exon_db"    / "trna_exon")
 RRNA_DB_DIR = BASE_DIR / "rrna_db"
 HMM_DIR     = BASE_DIR / "hmm_db"         / "hmm_profiles"
-GENE_CAT    = str(BASE_DIR / "gene_catalog.json")
+GENE_CAT    = str(config_dir() / "gene_catalog.json")
 
 RRNA_DBS = {
     "rrn16" : str(RRNA_DB_DIR / "rrn16"),

@@ -15,10 +15,8 @@ from typing import List, Dict
 import pandas as pd
 
 
-TRAIN_CSV = str(
-    Path(__file__).parent.parent.parent /
-    "database" / "splits" / "train.csv"
-)
+from ..paths import db_root
+TRAIN_CSV = str(db_root() / "splits" / "train.csv")
 
 # Load taxonomy once at import
 _TAX_DICT = None

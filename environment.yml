@@ -18,6 +18,7 @@ dependencies:
   - biopython
   - pandas
   - matplotlib        # circular plastome map (default output)
+  - platformdirs      # cross-platform data dir for the downloaded database
   - blast             # makeblastdb / blastn / tblastn
   - exonerate
   - hmmer             # hmmsearch / nhmmer

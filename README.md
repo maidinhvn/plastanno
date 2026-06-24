@@ -63,14 +63,17 @@ all external tools together:
 ```bash
 # create the environment (Python deps + all external tools)
 conda create -n plastanno --override-channels -c bioconda -c conda-forge \
-    python=3.10 biopython pandas matplotlib blast exonerate hmmer aragorn
+    python=3.10 biopython pandas matplotlib platformdirs blast exonerate hmmer aragorn
 conda activate plastanno
+
+# install the `plastanno` command into the environment
+pip install .
 
 # optional: extra tRNA source used by --trnascan
 conda install -n plastanno --override-channels -c bioconda -c conda-forge trnascan-se
 
 # REQUIRED before the first run: download the reference database (~266 MB)
-bash scripts/get_database.sh
+plastanno fetch-db
 ```
 
 `--override-channels` keeps the environment on `bioconda` + `conda-forge` only;
@@ -84,8 +87,15 @@ the channels and lists every dependency, so the two issues above cannot occur):
 ```bash
 conda env create -f environment.yml
 conda activate plastanno
-bash scripts/get_database.sh        # REQUIRED before the first run (~266 MB)
+pip install .
+plastanno fetch-db        # REQUIRED before the first run (~266 MB)
 ```
+
+`plastanno fetch-db` downloads the database into a platform data directory
+(`~/.local/share/plastanno/database` on Linux). Override the location with
+`$PLASTANNO_DB`. Running from a source checkout without installing also works:
+use `python3 plastanno.py …` and `bash scripts/get_database.sh` (which places the
+database under `./database`).
 
 Then verify everything is found (modules, databases, external tools):
 
@@ -99,20 +109,22 @@ then a built-in default — set `PLASTANNO_EXONERATE` if yours is elsewhere.
 ## Usage
 
 > **Before running:** the reference database must be present — run
-> `bash scripts/get_database.sh` once (see [Databases](#databases)). Without it,
-> annotation stops at the "Finding closest relatives" step with a BLAST database
-> error.
+> `plastanno fetch-db` once (see [Databases](#databases)). Without it, annotation
+> stops at the "Finding closest relatives" step with a BLAST database error.
 
 ```bash
 # Annotate one genome -> 6 files + a circular map (.png/.pdf/.svg) in out/
-python3 plastanno.py run genome.fasta --output out/ --threads 8
+plastanno run genome.fasta --output out/ --threads 8
 
 # Skip the map (e.g. for large batches / benchmarks)
-python3 plastanno.py run genome.fasta --output out/ --no-plot
+plastanno run genome.fasta --output out/ --no-plot
 
 # Annotate every *.fasta / *.fa in a directory
-python3 plastanno.py batch genomes/ --output out/ --threads 8
+plastanno batch genomes/ --output out/ --threads 8
 ```
+
+> Running from a source checkout without `pip install`? Use `python3 plastanno.py
+> run …` (and `bash scripts/get_database.sh`) — the same commands work unchanged.
 
 ### Optional inputs
 
