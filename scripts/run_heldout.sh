@@ -14,7 +14,7 @@
 # bench_runs/heldout/chunk_<i>/ ; this script skips those, so just rerun it.
 # ============================================================================
 set -u
-export PATH=/data06/users/vutrinh/.conda/envs/plastannot_env/bin:$PATH
+# Ensure the plastanno conda env is active so external tools are on PATH (conda activate plastanno)
 cd "$(dirname "$0")/.."
 mkdir -p bench_runs/heldout
 

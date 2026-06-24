@@ -13,7 +13,7 @@ from Bio import SeqIO
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # Full RefSeq reference collection used to build the databases (the same 12,581
 # plastomes the Background quantifies), so the figure matches the text claim.
-RAW = os.environ.get("PLASTANNO_DATA","/data06/users/vutrinh/Apiales_Plastomes_20260514")+"/rawdata"
+RAW = os.environ.get("PLASTANNO_DATA","benchmark_data")+"/rawdata"
 accs = [os.path.basename(p)[:-3] for p in glob.glob(f"{RAW}/*.gb")]
 
 def scan(acc):

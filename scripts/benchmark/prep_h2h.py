@@ -3,8 +3,8 @@
 import os, re, random
 import pandas as pd
 norm=lambda a:re.sub(r'\.\d+$','',a.strip())
-REPO="/data06/users/vutrinh/Plastanno_v2"
-TSV="/data06/users/vutrinh/PlastAnnot/database/all_genes_full.tsv"
+REPO=os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+TSV=os.environ.get("PLASTANNO_GENES_TSV","database/all_genes_full.tsv")
 N=250; random.seed(20260622)
 
 # DEV taxonomy: genus/family/order -> [dev versioned accs]

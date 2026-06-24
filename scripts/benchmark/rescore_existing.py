@@ -6,7 +6,7 @@ from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-RAW  = os.environ.get("PLASTANNO_DATA","/data06/users/vutrinh/Apiales_Plastomes_20260514")+"/rawdata"
+RAW  = os.environ.get("PLASTANNO_DATA","benchmark_data")+"/rawdata"
 
 def load(path, name):
     spec = importlib.util.spec_from_file_location(name, path)

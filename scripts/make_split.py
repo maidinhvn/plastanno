@@ -9,8 +9,8 @@ Run with --write only after inspecting the printed class distribution.
 import json, os, re, random, hashlib, argparse, datetime
 from collections import Counter, defaultdict
 
-CLS = os.environ.get("PLASTANNO_DATA","/data06/users/vutrinh/Apiales_Plastomes_20260514")+"/classify_results.json"
-RAW = os.environ.get("PLASTANNO_DATA","/data06/users/vutrinh/Apiales_Plastomes_20260514")+"/rawdata"
+CLS = os.environ.get("PLASTANNO_DATA","benchmark_data")+"/classify_results.json"
+RAW = os.environ.get("PLASTANNO_DATA","benchmark_data")+"/rawdata"
 OUT = "splits"
 SEED = 20260619
 HELDOUT_FRAC = 0.30

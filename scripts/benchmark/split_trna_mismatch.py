@@ -10,7 +10,7 @@ import sys, os, json, re, importlib.util
 from collections import Counter
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-RAW  = os.environ.get("PLASTANNO_DATA","/data06/users/vutrinh/Apiales_Plastomes_20260514")+"/rawdata"
+RAW  = os.environ.get("PLASTANNO_DATA","benchmark_data")+"/rawdata"
 
 def _bm():
     p = os.path.join(REPO, "scripts/benchmark/benchmark_gene_by_gene.py")

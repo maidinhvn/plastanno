@@ -28,7 +28,7 @@ import os, re, json, hashlib, random, argparse
 from collections import defaultdict, Counter
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-RAW = os.environ.get("PLASTANNO_DATA","/data06/users/vutrinh/Apiales_Plastomes_20260514")+"/rawdata"
+RAW = os.environ.get("PLASTANNO_DATA","benchmark_data")+"/rawdata"
 HELDOUT = os.path.join(REPO, "splits", "heldout_set.txt")
 OUTDIR = os.path.join(REPO, "splits", "heldout_chunks")
 FAMCACHE = os.path.join(REPO, "splits", "heldout_families.tsv")

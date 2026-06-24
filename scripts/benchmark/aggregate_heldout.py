@@ -15,7 +15,7 @@ from collections import defaultdict
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 HELD = os.path.join(REPO, "bench_runs", "heldout")
-CLS  = os.environ.get("PLASTANNO_DATA","/data06/users/vutrinh/Apiales_Plastomes_20260514")+"/classify_results.json"
+CLS  = os.environ.get("PLASTANNO_DATA","benchmark_data")+"/classify_results.json"
 FAM  = os.path.join(REPO, "splits", "heldout_families.tsv")
 strip = lambda a: re.sub(r"\.\d+$", "", a)
 

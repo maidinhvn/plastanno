@@ -28,7 +28,7 @@ from benchmark_gene_by_gene import (
     load_units, name_match, coord_close, overlaps, run as bench_run,
 )
 
-DEFAULT_RAW = os.environ.get("PLASTANNO_DATA","/data06/users/vutrinh/Apiales_Plastomes_20260514")+"/rawdata"
+DEFAULT_RAW = os.environ.get("PLASTANNO_DATA","benchmark_data")+"/rawdata"
 _TOL = 60
 _RUN = None
 _RAW = None

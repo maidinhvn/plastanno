@@ -12,11 +12,11 @@
 # Reproduce:  bash scripts/benchmark/run_h2h.sh && python3 scripts/benchmark/score_h2h.py
 # ============================================================================
 set -u
-export PATH=/data06/users/vutrinh/.conda/envs/plastannot_env/bin:$PATH
+# Ensure the plastanno conda env is active so external tools are on PATH (conda activate plastanno)
 cd "$(dirname "$0")/../.."
-EVAL=/data06/users/vutrinh/Apiales_Plastomes_20260514/eval_v2_raw
-RAW=/data06/users/vutrinh/Apiales_Plastomes_20260514/rawdata
-PGA=/data06/users/vutrinh/plastome_analysis/scripts/PGA/PGA.pl
+EVAL=${PLASTANNO_DATA:-benchmark_data}/eval_v2_raw
+RAW=${PLASTANNO_DATA:-benchmark_data}/rawdata
+PGA="${PGA:-PGA.pl}"
 H=bench_runs/h2h
 mkdir -p "$H/plast_out" "$H/pga_out" "$H/pt"
 echo "tool commit: $(git rev-parse HEAD)"  | tee "$H/PROVENANCE.txt"

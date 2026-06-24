@@ -20,8 +20,8 @@ from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 REPO   = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-CLS    = os.environ.get("PLASTANNO_DATA","/data06/users/vutrinh/Apiales_Plastomes_20260514")+"/classify_results.json"
-RAW    = os.environ.get("PLASTANNO_DATA","/data06/users/vutrinh/Apiales_Plastomes_20260514")+"/rawdata"
+CLS    = os.environ.get("PLASTANNO_DATA","benchmark_data")+"/classify_results.json"
+RAW    = os.environ.get("PLASTANNO_DATA","benchmark_data")+"/rawdata"
 SPLITS = os.path.join(REPO, "splits")
 
 strip = lambda a: re.sub(r"\.\d+$", "", a)

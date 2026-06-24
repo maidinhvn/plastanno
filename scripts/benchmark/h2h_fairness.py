@@ -4,7 +4,7 @@ from collections import Counter
 from multiprocessing import Pool
 spec = importlib.util.spec_from_file_location("bm", "scripts/benchmark/benchmark_gene_by_gene.py")
 bm = importlib.util.module_from_spec(spec); spec.loader.exec_module(bm)
-EVAL = os.environ.get("PLASTANNO_DATA","/data06/users/vutrinh/Apiales_Plastomes_20260514")+"/eval_v2_raw"; H = "bench_runs/h2h"
+EVAL = os.environ.get("PLASTANNO_DATA","benchmark_data")+"/eval_v2_raw"; H = "bench_runs/h2h"
 subset = [l.strip() for l in open("splits/h2h_subset.txt") if l.strip()]
 
 def work(a):

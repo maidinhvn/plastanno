@@ -7,8 +7,8 @@ import os, re, glob, json, importlib.util, warnings
 import statistics as st
 from multiprocessing import Pool
 warnings.filterwarnings("ignore")
-REPO="/data06/users/vutrinh/Plastanno_v2"
-EVAL=os.environ.get("PLASTANNO_DATA","/data06/users/vutrinh/Apiales_Plastomes_20260514")+"/eval_v2_raw"
+REPO=os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+EVAL=os.environ.get("PLASTANNO_DATA","benchmark_data")+"/eval_v2_raw"
 H=f"{REPO}/bench_runs/h2h"
 spec=importlib.util.spec_from_file_location("bm", f"{REPO}/scripts/benchmark/benchmark_gene_by_gene.py")
 bm=importlib.util.module_from_spec(spec); spec.loader.exec_module(bm)

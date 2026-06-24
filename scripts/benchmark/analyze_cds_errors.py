@@ -33,7 +33,7 @@ from benchmark_gene_by_gene import (
     load_units, name_match, coord_close, overlaps, similarity, run as bench_run,
 )
 
-DEFAULT_RAW = os.environ.get("PLASTANNO_DATA","/data06/users/vutrinh/Apiales_Plastomes_20260514")+"/rawdata"
+DEFAULT_RAW = os.environ.get("PLASTANNO_DATA","benchmark_data")+"/rawdata"
 
 
 def classify_fn(r, pred_cds, tol, sim):
