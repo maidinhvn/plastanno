@@ -38,8 +38,13 @@ PY
 
 echo ""
 echo "================ 4. EXTERNAL TOOLS ================"
-for t in makeblastdb blastn tblastn exonerate nhmmer hmmsearch aragorn tRNAscan-SE barrnap mafft muscle ; do
+echo "  -- required --"
+for t in makeblastdb blastn tblastn exonerate nhmmer hmmsearch aragorn ; do
   printf "  %-14s %s\n" "$t" "$(command -v $t 2>/dev/null || echo KHONG-TIM-THAY)"
+done
+echo "  -- optional (not needed for a default run) --"
+for t in tRNAscan-SE barrnap mafft muscle ; do
+  printf "  %-14s %s\n" "$t" "$(command -v $t 2>/dev/null || echo 'khong co (optional)')"
 done
 
 echo ""

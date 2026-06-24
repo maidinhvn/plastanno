@@ -47,21 +47,44 @@ See `docs/figures/Fig1_pipeline.*` and `Fig2_reconciliation.*` for schematics.
 external tools and the helper shell scripts assume a Unix environment) — use
 **WSL2** as a workaround.
 
-Plastanno needs Python ≥ 3.9 with `biopython` and `pandas`, plus four external
-tools on `PATH`: **BLAST+**, **Exonerate**, **HMMER** (`hmmsearch`) and
-**ARAGORN** (optionally **tRNAscan-SE** for the `--trnascan` option).
+Plastanno needs Python ≥ 3.9 with `biopython`, `pandas` and `matplotlib` (the
+last only for the circular map), plus four external tools on `PATH`: **BLAST+**,
+**Exonerate**, **HMMER** (`hmmsearch`) and **ARAGORN** (optionally
+**tRNAscan-SE** for the `--trnascan` option).
+
+**Prerequisite:** a working `conda`. We recommend
+[Miniforge](https://github.com/conda-forge/miniforge) (it defaults to the
+conda-forge channel and avoids the Anaconda Terms-of-Service prompt noted below),
+or [Miniconda](https://docs.conda.io/en/latest/miniconda.html).
 
 The easiest way is a single conda environment with the Python dependencies and
 all external tools together:
 
 ```bash
 # create the environment (Python deps + all external tools)
-conda create -n plastanno -c bioconda -c conda-forge \
-    python=3.10 biopython pandas blast exonerate hmmer aragorn
+conda create -n plastanno --override-channels -c bioconda -c conda-forge \
+    python=3.10 biopython pandas matplotlib blast exonerate hmmer aragorn
 conda activate plastanno
 
 # optional: extra tRNA source used by --trnascan
-conda install -n plastanno -c bioconda trnascan-se
+conda install -n plastanno --override-channels -c bioconda -c conda-forge trnascan-se
+
+# REQUIRED before the first run: download the reference database (~266 MB)
+bash scripts/get_database.sh
+```
+
+`--override-channels` keeps the environment on `bioconda` + `conda-forge` only;
+without it, recent conda versions also pull Anaconda's `defaults` channel and may
+stop with a `CondaToSNonInteractiveError` (Terms of Service not accepted). Using
+Miniforge avoids this entirely.
+
+Equivalently, create the environment in one step from the provided file (it pins
+the channels and lists every dependency, so the two issues above cannot occur):
+
+```bash
+conda env create -f environment.yml
+conda activate plastanno
+bash scripts/get_database.sh        # REQUIRED before the first run (~266 MB)
 ```
 
 Then verify everything is found (modules, databases, external tools):
@@ -74,6 +97,11 @@ The Exonerate executable is resolved from `$PLASTANNO_EXONERATE`, then `PATH`,
 then a built-in default — set `PLASTANNO_EXONERATE` if yours is elsewhere.
 
 ## Usage
+
+> **Before running:** the reference database must be present — run
+> `bash scripts/get_database.sh` once (see [Databases](#databases)). Without it,
+> annotation stops at the "Finding closest relatives" step with a BLAST database
+> error.
 
 ```bash
 # Annotate one genome -> 6 files + a circular map (.png/.pdf/.svg) in out/
@@ -137,7 +165,8 @@ databases, per-gene reference proteins, profile HMMs, a taxonomically tiered tRN
 database, an intron-exon database, full-length rRNA databases, a per-gene exon
 panel and length templates, and `gene_catalog.json`.
 
-**The large reference databases (~700 MB) are not in this Git repository** —
+**The large reference databases (~266 MB compressed download, ~700 MB once
+extracted) are not in this Git repository** —
 GitHub's per-file size limit makes them unsuitable for version control. Only the
 small runtime configs (`gene_catalog.json`, `boundary_db/`, `exon_templates.json`)
 are tracked. To run the tool after cloning, obtain the full `database/` in one of
