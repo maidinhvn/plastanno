@@ -362,6 +362,17 @@ def blast_trna(genome_seq, trna_db, min_length=60,
 # to its intron-proximal end rather than trusted whole.
 _MAX_TRNA_EXON = 55
 
+# Per-gene cap on the intron length (gap between the two exon hits). All plastid
+# intron tRNAs have introns < ~1 kb (largest: trnI-GAU ≈ 950 bp) EXCEPT trnK-UUU,
+# whose group-I intron carries matK and runs ~2.5 kb. A single permissive global
+# cap (3.5 kb, set for trnK) also let a 5' exon mis-pair with a wrong 3' exon
+# 3+ kb away, producing a giant spurious tRNA (e.g. a 3.5 kb "trnL-UAA") that then
+# swallowed an adjacent real tRNA in _merge_trna_sources (trnF-GAA was lost this
+# way). Capping each gene to its biologically plausible intron kills the mis-pair
+# without touching trnK.
+_INTRON_MAX_BY_GENE = {"trnK-UUU": 3000}
+_INTRON_MAX_DEFAULT = 1200
+
 
 def blast_intron_trna(genome_seq, exon_db,
                        min_intron=200, max_intron=3500,
@@ -431,6 +442,9 @@ def blast_intron_trna(genome_seq, exon_db,
 
     features = []
     for (gene, strand), hits in groups.items():
+        # Biologically plausible intron length for THIS gene (trnK is the only
+        # large one); never exceed the caller-supplied absolute ceiling.
+        cap = min(max_intron, _INTRON_MAX_BY_GENE.get(gene, _INTRON_MAX_DEFAULT))
         hits = sorted(hits, key=lambda x: x["qs"])
         best = None  # (gap, -combined_pident, left_exon, right_exon)
         for i, a in enumerate(hits):
@@ -438,7 +452,7 @@ def blast_intron_trna(genome_seq, exon_db,
                 gap = b["qs"] - a["qe"]
                 if gap < min_intron:
                     continue
-                if gap > max_intron:
+                if gap > cap:
                     break                      # hits sorted by qs → no closer b later
                 # A real intron tRNA spans exactly one 5' exon and one 3' exon.
                 # The exon-DB subjects are tagged _e1/_e2, so reject same-exon

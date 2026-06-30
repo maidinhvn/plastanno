@@ -226,6 +226,22 @@ def _select(features, gene_catalog):
     # legitimately duplicated when the inverted repeat expands, so collapsing by
     # catalog region deletes real second copies. Catalog region ≠ always single
     # copy; do not reintroduce without per-genome IR-boundary awareness.
+    #
+    # Confidence-gated spurious-copy drop (NOT region-based, so the reverted guard's
+    # failure mode does not apply): when a gene already has a CONFIDENT copy
+    # (HIGH/MEDIUM, i.e. flag != NEEDS_REVIEW), drop any *additional* copy that is
+    # both single-engine AND NEEDS_REVIEW. These are stray short exonerate/HMM hits
+    # that cleared the length filter (e.g. a 72 bp psbM fragment 15 kb from the real
+    # gene). A real IR-expanded second copy sits in a perfect repeat and is
+    # confirmed by both engines (AB / HIGH), so it is never single-engine
+    # NEEDS_REVIEW and is protected; a gene whose only copy is weak keeps it.
+    confident = {f.gene_name for f in final
+                 if f.gene_type == "CDS" and f.flag != "NEEDS_REVIEW"}
+    final = [f for f in final
+             if not (f.gene_type == "CDS"
+                     and f.flag == "NEEDS_REVIEW"
+                     and f.engine in ("A", "B")
+                     and f.gene_name in confident)]
     return passthrough + final
 
 
@@ -242,10 +258,25 @@ def reconcile(
 
     # AB: both engines found the gene
     for fa, fb, overlap in bins["AB"]:
+        # Coordinate donor is normally Engine A (exonerate gives precise CDS
+        # boundaries). Exception: when A is only a FRAGMENT of a CDS that B
+        # captured in full, trusting A's span makes the merged feature fail the
+        # _select length filter and the whole copy is lost (this is what dropped
+        # ycf2's ~6.8 kb IRa copy — exonerate breaks the large gene into pieces
+        # while the HMM finds it whole). In that case take B's fuller coordinates.
+        donor = fa
+        if fa.gene_type == "CDS":
+            exp = gene_catalog.get(fa.gene_name, {}).get("expected_len", 0)
+            if exp:
+                la = sum(e - s for s, e in fa.exons) if fa.exons else (fa.end - fa.start)
+                lb = sum(e - s for s, e in fb.exons) if fb.exons else (fb.end - fb.start)
+                if la / exp < 0.6 and lb > la:
+                    donor = fb
         feat = Feature(
-            gene_name=fa.gene_name, gene_type=fa.gene_type, product=fa.product,
-            start=fa.start, end=fa.end, strand=fa.strand,
-            exons=fa.exons, protein=fa.protein, engine="AB",
+            gene_name=fa.gene_name, gene_type=fa.gene_type,
+            product=donor.product or fa.product,
+            start=donor.start, end=donor.end, strand=donor.strand,
+            exons=donor.exons, protein=donor.protein, engine="AB",
             s_overlap=overlap, s_ref=fa.s_ref, s_model=fb.s_model,
         )
         feat.s_orf = validate_orf(feat, genome_seq, gene_catalog)
