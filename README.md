@@ -57,39 +57,61 @@ last only for the circular map), plus four external tools on `PATH`: **BLAST+**,
 conda-forge channel and avoids the Anaconda Terms-of-Service prompt noted below),
 or [Miniconda](https://docs.conda.io/en/latest/miniconda.html).
 
-The easiest way is a single conda environment with the Python dependencies and
-all external tools together:
+### Recommended: install from Bioconda
+
+The easiest way — conda pulls in `plastanno` together with every Python
+dependency and external tool. No cloning, no `pip`:
 
 ```bash
-# create the environment (Python deps + all external tools)
-conda create -n plastanno --override-channels -c bioconda -c conda-forge \
-    python=3.10 biopython pandas matplotlib platformdirs blast exonerate hmmer aragorn
+conda create -n plastanno -c bioconda -c conda-forge plastanno
 conda activate plastanno
-
-# install the `plastanno` command into the environment
-pip install .
-
-# optional: extra tRNA source used by --trnascan
-conda install -n plastanno --override-channels -c bioconda -c conda-forge trnascan-se
 
 # REQUIRED before the first run: download the reference database (~266 MB)
 plastanno fetch-db
 ```
 
-`--override-channels` keeps the environment on `bioconda` + `conda-forge` only;
-without it, recent conda versions also pull Anaconda's `defaults` channel and may
-stop with a `CondaToSNonInteractiveError` (Terms of Service not accepted). Using
-Miniforge avoids this entirely.
-
-Equivalently, create the environment in one step from the provided file (it pins
-the channels and lists every dependency, so the two issues above cannot occur):
+To add the optional tRNAscan-SE source (used only by the `--trnascan` option):
 
 ```bash
+conda install -n plastanno -c bioconda -c conda-forge trnascan-se
+```
+
+> If `conda create` stops with a `CondaToSNonInteractiveError` (Anaconda Terms of
+> Service not accepted), add `--override-channels` to keep the environment on
+> `bioconda` + `conda-forge` only. Using Miniforge avoids this entirely.
+
+### From source (developers / unreleased code)
+
+Use this only to run a development checkout. Here `pip install .` is run **from
+inside the cloned repository**, so the leading `git clone && cd` matters:
+
+```bash
+git clone https://github.com/maidinhvn/plastanno.git
+cd plastanno
+
+# create the environment (Python deps + all external tools) from the pinned file
 conda env create -f environment.yml
 conda activate plastanno
+
+# install the `plastanno` command from this checkout
 pip install .
-plastanno fetch-db        # REQUIRED before the first run (~266 MB)
+
+# REQUIRED before the first run: download the reference database (~266 MB)
+plastanno fetch-db
 ```
+
+`environment.yml` pins the channels and lists every dependency. To build the
+environment by hand instead, the equivalent one-liner is:
+
+```bash
+conda create -n plastanno --override-channels -c bioconda -c conda-forge \
+    python=3.10 biopython pandas matplotlib platformdirs blast exonerate hmmer aragorn
+```
+
+(`--override-channels` keeps the environment on `bioconda` + `conda-forge` only,
+avoiding the `CondaToSNonInteractiveError` noted above.) You can also skip
+`pip install .` and run the tool directly from the checkout with
+`python3 plastanno.py …` (see [Usage](#usage)).
 
 `plastanno fetch-db` downloads the database into a platform data directory
 (`~/.local/share/plastanno/database` on Linux). Override the location with
