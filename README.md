@@ -86,6 +86,20 @@ conda install -n plastanno -c conda-forge -c bioconda trnascan-se
 > which has no `defaults` channel, or append `--override-channels` to this one
 > command to exclude it.
 
+> **Solve is slow or hangs at "Examining conflict"?** This happens on an older
+> Anaconda/Miniconda `base` that still uses the classic solver and mixes in the
+> `defaults` channel. Switch to the fast libmamba solver and exclude `defaults`:
+>
+> ```bash
+> conda install -n base conda-libmamba-solver   # if not already present
+> conda config --set solver libmamba
+> conda config --set channel_priority strict
+> conda create -n plastanno -c conda-forge -c bioconda --override-channels plastanno
+> ```
+>
+> Or just use [Miniforge](https://github.com/conda-forge/miniforge), which ships
+> the libmamba solver and the `mamba` front-end (`mamba create …`) by default.
+
 ### From source (developers / unreleased code)
 
 Use this only to run a development checkout. Here `pip install .` is run **from
