@@ -154,15 +154,23 @@ then a built-in default — set `PLASTANNO_EXONERATE` if yours is elsewhere.
 > stops at the "Finding closest relatives" step with a BLAST database error.
 
 ```bash
-# Annotate one genome -> 6 files + a circular map (.png/.pdf/.svg) in out/
+# Annotate ONE genome (a single FASTA file) -> 6 files + a circular map
+# (.png/.pdf/.svg) in out/
 plastanno run genome.fasta --output out/ --threads 8
 
 # Skip the map (e.g. for large batches / benchmarks)
 plastanno run genome.fasta --output out/ --no-plot
 
-# Annotate every *.fasta / *.fa in a directory
+# Annotate a WHOLE FOLDER: pass the DIRECTORY path (not a file, not a glob).
+# `batch` scans that directory itself for every *.fasta and *.fa inside it.
 plastanno batch genomes/ --output out/ --threads 8
 ```
+
+> **Note on `batch`:** the argument is a *directory*, e.g. `genomes/`. Do **not**
+> pass a shell glob — `plastanno batch genomes/*.fasta` does not work, because the
+> shell expands it to many paths while `batch` expects a single folder. Put the
+> FASTA files in one directory and point `batch` at that directory; it picks up
+> the `*.fasta` / `*.fa` files for you.
 
 > Running from a source checkout without `pip install`? Use `python3 plastanno.py
 > run …` (and `bash scripts/get_database.sh`) — the same commands work unchanged.
