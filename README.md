@@ -63,7 +63,8 @@ The easiest way — conda pulls in `plastanno` together with every Python
 dependency and external tool. No cloning, no `pip`:
 
 ```bash
-conda create -n plastanno -c bioconda -c conda-forge plastanno
+conda config --set channel_priority strict   # recommended for bioconda
+conda create -n plastanno -c conda-forge -c bioconda plastanno
 conda activate plastanno
 
 # REQUIRED before the first run: download the reference database (~266 MB)
@@ -73,12 +74,17 @@ plastanno fetch-db
 To add the optional tRNAscan-SE source (used only by the `--trnascan` option):
 
 ```bash
-conda install -n plastanno -c bioconda -c conda-forge trnascan-se
+conda install -n plastanno -c conda-forge -c bioconda trnascan-se
 ```
 
+> List `conda-forge` before `bioconda` so it keeps the higher priority — this is
+> the channel order Bioconda requires; with `channel_priority strict` it also
+> speeds up the solver and avoids mixing incompatible builds.
+>
 > If `conda create` stops with a `CondaToSNonInteractiveError` (Anaconda Terms of
-> Service not accepted), add `--override-channels` to keep the environment on
-> `bioconda` + `conda-forge` only. Using Miniforge avoids this entirely.
+> Service not accepted), it is coming from the `defaults` channel — use Miniforge,
+> which has no `defaults` channel, or append `--override-channels` to this one
+> command to exclude it.
 
 ### From source (developers / unreleased code)
 
@@ -104,12 +110,11 @@ plastanno fetch-db
 environment by hand instead, the equivalent one-liner is:
 
 ```bash
-conda create -n plastanno --override-channels -c bioconda -c conda-forge \
+conda create -n plastanno -c conda-forge -c bioconda \
     python=3.10 biopython pandas matplotlib platformdirs blast exonerate hmmer aragorn
 ```
 
-(`--override-channels` keeps the environment on `bioconda` + `conda-forge` only,
-avoiding the `CondaToSNonInteractiveError` noted above.) You can also skip
+(Same channel-order / Terms-of-Service notes as above apply.) You can also skip
 `pip install .` and run the tool directly from the checkout with
 `python3 plastanno.py …` (see [Usage](#usage)).
 

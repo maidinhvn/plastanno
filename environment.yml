@@ -5,13 +5,15 @@
 #   conda activate plastanno
 #   bash scripts/get_database.sh        # REQUIRED before the first run (~266 MB)
 #
-# `channels:` is pinned to bioconda + conda-forge so the Anaconda `defaults`
-# channel is never pulled (avoids the Terms-of-Service prompt on recent conda).
-# To also use the optional --trnascan source, uncomment trnascan-se below.
+# `channels:` lists conda-forge before bioconda (the order Bioconda requires, so
+# conda-forge keeps the higher priority) and ends with `nodefaults` so the
+# Anaconda `defaults` channel is never pulled (avoids the Terms-of-Service prompt
+# on recent conda). To also use the optional --trnascan source, uncomment
+# trnascan-se below.
 name: plastanno
 channels:
-  - bioconda
   - conda-forge
+  - bioconda
   - nodefaults
 dependencies:
   - python=3.10
