@@ -160,6 +160,7 @@ def run(
         engine_b    = features_b,
         genome_seq  = genome_seq,
         gene_catalog= gene_catalog,
+        ir_boundaries= ir_boundaries,
     )
 
     high   = sum(1 for a in annotations if a.flag=="HIGH")

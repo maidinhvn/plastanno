@@ -137,7 +137,7 @@ def _quality(f, gene_catalog):
     return (round(closeness, 3), _ENGINE_RANK.get(f.engine, 0), span, round(f.confidence, 3))
 
 
-def _select(features, gene_catalog):
+def _select(features, gene_catalog, ir_boundaries=None):
     """
     Unified locus selection — replaces fragment-collapse and HMM-crosshit removal.
 
@@ -237,11 +237,43 @@ def _select(features, gene_catalog):
     # NEEDS_REVIEW and is protected; a gene whose only copy is weak keeps it.
     confident = {f.gene_name for f in final
                  if f.gene_type == "CDS" and f.flag != "NEEDS_REVIEW"}
-    final = [f for f in final
-             if not (f.gene_type == "CDS"
-                     and f.flag == "NEEDS_REVIEW"
-                     and f.engine in ("A", "B")
-                     and f.gene_name in confident)]
+
+    # IR-aware second discriminator (only when the genome's IR boundaries are
+    # known): also drop a single-engine copy that is WEAKER than a dual-engine (AB)
+    # copy of the same gene AND lies OUTSIDE the inverted repeat. A genuine
+    # IR-expanded duplicate sits inside the IR, so it is protected; a spurious
+    # exonerate/HMM hit elsewhere (e.g. a MEDIUM-confidence engine-A psbM copy in
+    # the LSC, which the NEEDS_REVIEW gate above does not catch) is removed. Gated
+    # on ir_boundaries so behaviour is unchanged when IR is unknown; the earlier
+    # NON-IR-aware form of this rule cost 41 real IR-junction TP on DEV, which the
+    # in-IR guard recovers.
+    ab_best = {}
+    for f in final:
+        if f.gene_type == "CDS" and f.engine == "AB":
+            ab_best[f.gene_name] = max(ab_best.get(f.gene_name, 0.0), f.confidence)
+
+    def _in_ir(f):
+        if not ir_boundaries:
+            return False
+        for key in ("IRa", "IRb"):
+            r = ir_boundaries.get(key)
+            if r and min(f.end, r[1]) - max(f.start, r[0]) > 0:
+                return True
+        return False
+
+    def _spurious_extra(f):
+        if f.gene_type != "CDS" or f.engine not in ("A", "B"):
+            return False
+        # (a) stray low-confidence copy when a confident copy exists
+        if f.flag == "NEEDS_REVIEW" and f.gene_name in confident:
+            return True
+        # (b) single-engine copy weaker than an AB copy, outside the IR
+        if (ir_boundaries and f.gene_name in ab_best
+                and f.confidence < ab_best[f.gene_name] and not _in_ir(f)):
+            return True
+        return False
+
+    final = [f for f in final if not _spurious_extra(f)]
     return passthrough + final
 
 
@@ -250,6 +282,7 @@ def reconcile(
     engine_b: List[Feature],
     genome_seq: str,
     gene_catalog: dict,
+    ir_boundaries: dict = None,   # enables the IR-aware spurious-copy guard in _select
     weights: Tuple = None,   # kept for signature compatibility; unused
 ) -> List[Feature]:
     """Merge Engine A and B features with provenance and a calibrated confidence."""
@@ -342,4 +375,4 @@ def reconcile(
             winner.notes.append("conflict resolved by ORF validity")
             results.append(winner)
 
-    return _select(results, gene_catalog)
+    return _select(results, gene_catalog, ir_boundaries)
