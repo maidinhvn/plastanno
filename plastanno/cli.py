@@ -19,6 +19,26 @@ import time
 from pathlib import Path
 
 
+def _require_database():
+    """Preflight: make sure the reference database is present before annotating.
+
+    A fresh `conda install plastanno` / `pip install` ships only the code, not the
+    ~266 MB database, so without this guard the first `plastanno run` dies deep in
+    the pipeline with an opaque BLAST error. Fail early with the exact fix instead.
+    """
+    from plastanno.paths import database_ready, db_root
+    if not database_ready():
+        print("ERROR: reference database not found (looked in: %s)" % db_root())
+        print()
+        print("Plastanno needs its ~266 MB reference database before it can annotate.")
+        print("Download it once with:")
+        print()
+        print("    plastanno fetch-db")
+        print()
+        print("(or set $PLASTANNO_DB to a directory that already holds it).")
+        sys.exit(1)
+
+
 def cmd_run(args):
     """Annotate a single plastome."""
     from plastanno.pipeline import run
@@ -26,6 +46,7 @@ def cmd_run(args):
     if not Path(args.input).exists():
         print(f"ERROR: Input file not found: {args.input}")
         sys.exit(1)
+    _require_database()
 
     prefix = args.prefix or Path(args.input).stem
     output = args.output or "plastanno_output"
@@ -59,6 +80,7 @@ def cmd_batch(args):
     if not fastas:
         print(f"ERROR: No FASTA files in {input_dir}")
         sys.exit(1)
+    _require_database()
 
     print(f"Found {len(fastas)} FASTA files")
     output = Path(args.output or "plastanno_batch_output")

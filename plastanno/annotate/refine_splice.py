@@ -153,7 +153,54 @@ def _refine_one(feat, g):
         feat.exons = ex; feat.start = ex[0][0]; feat.end = ex[-1][1]; feat.has_intron = len(ex) > 1
     return changed
 
-def refine_all(annotations, genome_seq):
+_STOP = {"TAA", "TAG", "TGA"}
+_SNAP_MAX_CODONS = 3          # only look ≤ 9 bp downstream (RNA-editing-safe)
+
+def _snap_terminal_stop(feat, g, gene_catalog):
+    """Extend a CDS 3' end by up to _SNAP_MAX_CODONS codons to reach the nearest
+    in-frame stop, when the spliced CDS does not already end in a stop.
+
+    Deliberately CONSERVATIVE. Many plastid CDS (esp. multi-exon) are annotated a
+    codon short of the terminal stop; snapping to the adjacent genomic stop fixes
+    that. The window is tiny (≤ 9 bp) and the result must not overshoot the
+    expected length, so genes whose functional stop is created by RNA editing
+    (genomic read-through, e.g. some ndh/rpl2) are NOT force-extended to a distant
+    downstream stop — if no genomic stop sits right at the terminus we leave it.
+    """
+    exons = sorted(feat.exons) if feat.exons else [(feat.start, feat.end)]
+    seq = "".join(g[s:e] for s, e in exons)
+    if feat.strand == -1:
+        seq = _rc(seq)
+    if len(seq) < 6 or len(seq) % 3 != 0:      # need an intact frame to snap
+        return False
+    if seq[-3:].upper() in _STOP:               # already terminated
+        return False
+
+    exp = (gene_catalog.get(feat.gene_name, {}) or {}).get("expected_len", 0)
+    for k in range(_SNAP_MAX_CODONS):
+        if feat.strand == 1:
+            p = exons[-1][1] + 3 * k
+            if p + 3 > len(g): break
+            codon = g[p:p + 3].upper()
+        else:
+            p = exons[0][0] - 3 * k
+            if p - 3 < 0: break
+            codon = _rc(g[p - 3:p]).upper()
+        if codon in _STOP:
+            newlen = sum(e - s for s, e in exons) + 3 * (k + 1)
+            if exp and newlen / exp > 1.2:      # never overshoot the gene
+                return False
+            if feat.strand == 1:
+                exons[-1] = (exons[-1][0], exons[-1][1] + 3 * (k + 1))
+            else:
+                exons[0] = (exons[0][0] - 3 * (k + 1), exons[0][1])
+            feat.exons = exons
+            feat.start = exons[0][0]; feat.end = exons[-1][1]
+            return True
+    return False
+
+def refine_all(annotations, genome_seq, gene_catalog=None):
+    gene_catalog = gene_catalog or {}
     n = 0
     for f in annotations:
         if getattr(f, "gene_type", None) != "CDS": continue
@@ -161,5 +208,15 @@ def refine_all(annotations, genome_seq):
         if not getattr(f, "exons", None) or len(f.exons) < 2: continue
         try:
             if _refine_one(f, genome_seq): n += 1
+        except Exception: pass
+    # Terminal-stop snap — all CDS (single- and multi-exon), skip pseudogenes and
+    # trans-spliced features. Runs after junction refinement so it snaps the final
+    # exon end.
+    for f in annotations:
+        if getattr(f, "gene_type", None) != "CDS": continue
+        if getattr(f, "exon_strands", None): continue
+        if getattr(f, "is_pseudogene", False): continue
+        try:
+            _snap_terminal_stop(f, genome_seq, gene_catalog)
         except Exception: pass
     return n

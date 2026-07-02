@@ -185,7 +185,7 @@ def run(
 
     # ── Step 6b: Splice-site refinement (multi-exon CDS) ──────────────────────
     from .annotate.refine_splice import refine_all
-    n_refined = refine_all(annotations, genome_seq)
+    n_refined = refine_all(annotations, genome_seq, gene_catalog)
     if n_refined:
         print(f"      Splice-site refined: {n_refined} multi-exon CDS")
 

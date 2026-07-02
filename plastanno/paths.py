@@ -41,3 +41,13 @@ def db_root() -> Path:
     except Exception:
         pass  # platformdirs absent or unusable -> fall back to repo layout
     return _REPO_FALLBACK
+
+
+def database_ready() -> bool:
+    """True if the reference database has been fetched at the resolved location.
+
+    Checks the closest-relative BLAST db (`blast_db/genus_reps.*`), which is the
+    first thing the pipeline needs — so a friendly preflight message can replace
+    the cryptic BLAST error a fresh install would otherwise hit."""
+    bd = db_root() / "blast_db"
+    return bd.is_dir() and any(bd.glob("genus_reps.*"))
