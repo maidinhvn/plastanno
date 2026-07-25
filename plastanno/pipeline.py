@@ -41,6 +41,7 @@ def run(
     no_plot     : bool = False,
     reference   : Optional[str] = None,
     use_trnascan: bool = False,
+    organism    : Optional[str] = None,
     verbose     : bool = False,
 ) -> dict:
     """
@@ -203,6 +204,7 @@ def run(
         out_dir      = out_dir,
         prefix       = prefix,
         no_plot      = no_plot,
+        organism     = organism,
     )
     for f in files:
         print(f"      ✅ {f}")

@@ -8,10 +8,17 @@ Improvements over v1:
 - Confidence flags in GFF3
 - Clean FASTA headers
 """
+import re
+import hashlib
 from pathlib import Path
 from typing import List, Dict
 from datetime import datetime
 from ..core.feature import Feature
+
+
+# Written to /organism when the user gives no --organism. It is a stand-in, not a
+# real determination, so write_all() warns whenever it is used.
+PLACEHOLDER_ORGANISM = "Viridiplantae"
 
 
 def _strand_str(strand):
@@ -20,34 +27,79 @@ def _strand_str(strand):
     return "."
 
 
+def _sanitize_id(name):
+    """Identifier-safe form of a sequence name: keep the part before the first
+    comma or whitespace (the FASTA/GenBank convention), and map any remaining
+    invalid character to '_'. Idempotent — a clean accession such as
+    'NC_053537.1' is returned unchanged. A FASTA header like
+    'Centella_asiatica_CA1_plastid, complete genome' becomes
+    'Centella_asiatica_CA1_plastid'."""
+    base = re.split(r"[,\s]", str(name).strip(), 1)[0]
+    base = re.sub(r"[^A-Za-z0-9_.\-]", "_", base).strip("_")
+    return base or "seq"
+
+
+def _locus_name(name, maxlen=16):
+    """A spec-valid GenBank LOCUS name: sanitized and at most `maxlen` characters
+    (the GenBank locus field is columns 13-28). A long name's distinguishing part
+    is often its suffix (e.g. a sample tag CA1/CA2/CA18), so a blind truncation
+    would make several genomes collide on one LOCUS name; we therefore keep a
+    prefix plus a short hash of the full name to stay short AND unique."""
+    base = _sanitize_id(name)
+    if len(base) <= maxlen:
+        return base
+    h = hashlib.md5(str(name).encode()).hexdigest()[:4]
+    return f"{base[:maxlen - 5]}_{h}"
+
+
 def write_genbank(annotations, genome_seq, accession,
                    genome_len, ir_boundaries, relatives,
-                   out_path):
-    """Write GenBank format with provenance notes."""
+                   out_path, organism=None):
+    """Write GenBank format with provenance notes.
+
+    `organism` is the taxon name (from --organism). It is written consistently to
+    the ORGANISM/SOURCE header, the DEFINITION line and the source feature's
+    /organism qualifier, so downstream tools (NCBI submission, CPJSdraw, the
+    circular map) all see the same taxon. When it is not supplied we fall back to
+    the generic placeholder and the caller warns — a silent placeholder previously
+    ended up labelling every sample "Viridiplantae".
+    """
     from Bio import SeqIO
     from Bio.SeqRecord import SeqRecord
     from Bio.Seq import Seq
     from Bio.SeqFeature import SeqFeature, FeatureLocation, CompoundLocation
 
+    org = (organism or "").strip() or PLACEHOLDER_ORGANISM
+    # No trailing '.' — Biopython appends one when writing the DEFINITION line.
+    definition = (f"{org} chloroplast, complete genome"
+                  if organism else "Annotated by Plastanno v2")
+
     seq    = Seq(genome_seq)
     record = SeqRecord(
         seq,
-        id          = accession,
-        name        = accession,
-        description = "Annotated by Plastanno v2",
+        id          = _sanitize_id(accession),
+        name        = _locus_name(accession),   # valid GenBank LOCUS (<=16 chars, no comma)
+        description = definition,
     )
-    record.annotations["molecule_type"] = "DNA"
-    record.annotations["topology"]      = "circular"
+    record.annotations["molecule_type"]      = "DNA"
+    record.annotations["topology"]           = "circular"
+    # Division: PLN covers plants / algae / fungi, i.e. the entire scope of a
+    # plastome annotator. Without this Biopython writes the invalid default 'UNK'.
+    record.annotations["data_file_division"] = "PLN"
+    # Without this the SOURCE / ORGANISM header lines are written as a bare '.'
+    record.annotations["organism"]           = org
+    record.annotations["source"]             = org
     record.annotations["date"]          = \
         datetime.now().strftime("%d-%b-%Y").upper()
 
-    # Source feature
+    # Source feature. /organelle is required for an organellar GenBank submission.
     record.features.append(SeqFeature(
         FeatureLocation(0, genome_len),
         type = "source",
         qualifiers = {
-            "organism": ["Viridiplantae"],
-            "mol_type": ["genomic DNA"],
+            "organism" : [org],
+            "mol_type" : ["genomic DNA"],
+            "organelle": ["plastid:chloroplast"],
         }
     ))
 
@@ -372,10 +424,24 @@ def write_report(annotations, accession, genome_len,
 
 def write_all(annotations, genome_seq, accession,
                genome_len, ir_boundaries, relatives,
-               out_dir, prefix, no_plot=False, elapsed=0):
+               out_dir, prefix, no_plot=False, elapsed=0, organism=None):
     """Write all output files."""
     out_dir = Path(out_dir)
     files   = []
+
+    # A missing taxon name is not fatal, but it must not be silent: the generic
+    # placeholder otherwise propagates into /organism, the DEFINITION line and any
+    # downstream figure, and would mis-assign the taxon in a GenBank submission.
+    if not (organism or "").strip():
+        print(f"      NOTE: no --organism given; /organism is the placeholder "
+              f"'{PLACEHOLDER_ORGANISM}'.\n"
+              f"            Set --organism \"Genus species\" before submitting to GenBank.")
+
+    # One clean identifier for every output (LOCUS name, GFF3 seqid, FASTA
+    # headers, filenames). `prefix` is the user's --prefix or the input filename
+    # stem, which is cleaner than record.id (the raw FASTA header, which may carry
+    # a trailing ', complete genome'). Sanitising here keeps all files consistent.
+    seq_id = _sanitize_id(prefix)
 
     # Fill in CDS protein translations (used by both the GenBank /translation
     # qualifier and the .faa file); the engines leave Feature.protein empty.
@@ -393,28 +459,28 @@ def write_all(annotations, genome_seq, accession,
                 f"internal stop codon(s) (n={n_stop}): possible pseudogene or RNA-editing site")
 
     # GenBank
-    gb_path = out_dir / f"{prefix}.gb"
+    gb_path = out_dir / f"{seq_id}.gb"
     write_genbank(
-        annotations, genome_seq, accession,
-        genome_len, ir_boundaries, relatives, gb_path
+        annotations, genome_seq, seq_id,
+        genome_len, ir_boundaries, relatives, gb_path, organism=organism
     )
     files.append(gb_path)
 
     # GFF3
-    gff_path = out_dir / f"{prefix}.gff3"
-    write_gff3(annotations, genome_len, accession, gff_path)
+    gff_path = out_dir / f"{seq_id}.gff3"
+    write_gff3(annotations, genome_len, seq_id, gff_path)
     files.append(gff_path)
 
     # FASTA files
     faa, ffn, frn = write_fasta_files(
-        annotations, genome_seq, accession, out_dir
+        annotations, genome_seq, seq_id, out_dir
     )
     files.extend([faa, ffn, frn])
 
     # Report
-    rep_path = out_dir / f"{prefix}.report"
+    rep_path = out_dir / f"{seq_id}.report"
     write_report(
-        annotations, accession, genome_len,
+        annotations, seq_id, genome_len,
         ir_boundaries, relatives, elapsed, rep_path
     )
     files.append(rep_path)
@@ -437,10 +503,14 @@ def write_all(annotations, genome_seq, accession,
                 _pcm = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(_pcm)
             _rec = next(_SeqIO.parse(str(gb_path), "genbank"))
             _ir = _pcm.ir_from_blast(str(_rec.seq).upper()) or _pcm.ir_from_annotation(_rec)
-            _org = (_rec.annotations.get("organism") or "").strip() or accession
-            _pcm.draw_map(_rec, _ir, _org, 180, str(out_dir / f"{prefix}_map"), dpi=300)
+            # Label the map with the real taxon; the generic placeholder is no more
+            # informative than the sequence id, so prefer the id in that case.
+            _org = (_rec.annotations.get("organism") or "").strip()
+            if not _org or _org == PLACEHOLDER_ORGANISM:
+                _org = seq_id
+            _pcm.draw_map(_rec, _ir, _org, 180, str(out_dir / f"{seq_id}_map"), dpi=300)
             for _ext in (".png", ".pdf", ".svg"):
-                _p = out_dir / f"{prefix}_map{_ext}"
+                _p = out_dir / f"{seq_id}_map{_ext}"
                 if _p.exists() and _p not in files:
                     files.append(_p)
         except Exception as _e:

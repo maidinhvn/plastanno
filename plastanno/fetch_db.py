@@ -26,10 +26,21 @@ def _data_parent() -> Path:
 
 
 def _progress(blocks, bsize, total):
-    if total > 0:
-        pct = min(100, blocks * bsize * 100 // total)
+    # The '\r' redraw only works on a terminal. When stdout is redirected (nohup,
+    # batch schedulers, CI) it does not overwrite, so an unguarded call floods the
+    # log with tens of thousands of percentages; print a few milestones instead.
+    if total <= 0:
+        return
+    pct = min(100, blocks * bsize * 100 // total)
+    if sys.stdout.isatty():
         sys.stdout.write(f"\r      {pct}%")
         sys.stdout.flush()
+    elif pct >= _progress.next_milestone:
+        print(f"      {pct}%", flush=True)
+        _progress.next_milestone = pct + 25
+
+
+_progress.next_milestone = 0
 
 
 def fetch_db(force: bool = False) -> Path:

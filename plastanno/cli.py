@@ -67,6 +67,7 @@ def cmd_run(args):
         no_plot     = args.no_plot,
         reference   = args.reference,
         use_trnascan= args.trnascan,
+        organism    = args.organism,
     )
     return result
 
@@ -98,6 +99,7 @@ def cmd_batch(args):
                 no_plot     = args.no_plot,
                 reference   = args.reference,
                 use_trnascan= args.trnascan,
+                organism    = args.organism,
             )
             results.append({
                 "file"   : fa.name,
@@ -142,6 +144,19 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
+    # Prefer the running package's own __version__: it always matches the code
+    # actually executing, whether from a source checkout or an installed package.
+    # (Installed metadata alone can be stale — a leftover egg-info once made this
+    # report an older release than the code being run.)
+    try:
+        from plastanno import __version__ as _ver
+    except Exception:
+        try:
+            from importlib.metadata import version as _v
+            _ver = _v("plastanno")
+        except Exception:
+            _ver = "unknown"
+    parser.add_argument("--version", action="version", version=f"plastanno {_ver}")
     subparsers = parser.add_subparsers(dest="command")
 
     # run command
@@ -163,6 +178,9 @@ def main():
     run_parser.add_argument("--reference",
         help="Annotated reference plastome (GenBank) whose per-gene proteins are "
              "overlaid on the built-in DB for Engine A (automatic fallback to DB)")
+    run_parser.add_argument("--organism",
+        metavar="\"Genus species\"",
+        help="taxon name written to ORGANISM/DEFINITION//organism; required for GenBank submission")
     run_parser.add_argument("--trnascan",
         action="store_true",
         help="Also run tRNAscan-SE as an extra tRNA source (must be on PATH)")
@@ -181,6 +199,9 @@ def main():
         action="store_true")
     batch_parser.add_argument("--reference",
         help="Annotated reference plastome (GenBank) overlaid on Engine A's DB")
+    batch_parser.add_argument("--organism",
+        metavar="\"Genus species\"",
+        help="taxon name written to ORGANISM/DEFINITION//organism; required for GenBank submission")
     batch_parser.add_argument("--trnascan",
         action="store_true",
         help="Also run tRNAscan-SE as an extra tRNA source")

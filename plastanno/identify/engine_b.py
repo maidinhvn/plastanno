@@ -373,6 +373,17 @@ _MAX_TRNA_EXON = 55
 _INTRON_MAX_BY_GENE = {"trnK-UUU": 3000}
 _INTRON_MAX_DEFAULT = 1200
 
+# Approximate expected intron length (bp) for the long-intron plastid tRNAs. Used
+# ONLY as a conservative rescue in the exon pairing: the default "tightest intron"
+# rule can mis-pair a 5' exon with a spurious intermediate 3' exon hit inside the
+# real intron, truncating the tRNA (e.g. trnA-UGC annotated ~453 bp vs the real
+# ~880 bp). When the tightest pick is clearly SHORT for such a gene, prefer a
+# plausible full-length pair. Genes not listed are never rescued -> unchanged.
+_INTRON_EXPECTED = {
+    "trnA-UGC": 800, "trnI-GAU": 950, "trnG-UCC": 700,
+    "trnK-UUU": 2500, "trnV-UAC": 570, "trnL-UAA": 500,
+}
+
 
 def blast_intron_trna(genome_seq, exon_db,
                        min_intron=200, max_intron=3500,
@@ -446,7 +457,7 @@ def blast_intron_trna(genome_seq, exon_db,
         # large one); never exceed the caller-supplied absolute ceiling.
         cap = min(max_intron, _INTRON_MAX_BY_GENE.get(gene, _INTRON_MAX_DEFAULT))
         hits = sorted(hits, key=lambda x: x["qs"])
-        best = None  # (gap, -combined_pident, left_exon, right_exon)
+        cands = []  # all valid (gap, -combined_pident, left_exon, right_exon) pairs
         for i, a in enumerate(hits):
             for b in hits[i + 1:]:
                 gap = b["qs"] - a["qe"]
@@ -465,11 +476,20 @@ def blast_intron_trna(genome_seq, exon_db,
                 # right hit's left side)
                 la = (max(a["qs"], a["qe"] - _MAX_TRNA_EXON), a["qe"])
                 rb = (b["qs"], min(b["qe"], b["qs"] + _MAX_TRNA_EXON))
-                key = (gap, -(a["pident"] + b["pident"]), la, rb)
-                if best is None or key < best:
-                    best = key
-        if best is None:
+                cands.append((gap, -(a["pident"] + b["pident"]), la, rb))
+        if not cands:
             continue
+        best = min(cands)              # default: tightest intron (unchanged)
+        # Conservative rescue: if the tightest pick is clearly TRUNCATED for a
+        # long-intron gene (a spurious intermediate 3' exon was chosen inside the
+        # real intron), prefer a plausible full-length pair. Fires ONLY when the
+        # pick is < 0.6x the gene's expected intron — so normal, correct picks
+        # (>= 0.6x expected) are never touched.
+        exp = _INTRON_EXPECTED.get(gene)
+        if exp and best[0] < 0.6 * exp:
+            full = [c for c in cands if 0.6 * exp <= c[0] <= 1.5 * exp]
+            if full:
+                best = min(full, key=lambda c: (c[1], abs(c[0] - exp)))
         _, _, la, rb = best
         features.append(Feature(
             gene_name=gene, gene_type="tRNA",

@@ -100,6 +100,42 @@ conda install -n plastanno -c conda-forge -c bioconda trnascan-se
 > Or just use [Miniforge](https://github.com/conda-forge/miniforge), which ships
 > the libmamba solver and the `mamba` front-end (`mamba create …`) by default.
 
+### Upgrading an existing installation
+
+Plastanno is an ordinary conda package, so upgrading is handled by conda — there
+is no self-update command:
+
+```bash
+conda activate plastanno
+conda update -c conda-forge -c bioconda plastanno     # to the newest release
+# or pin an exact release:
+conda install -c conda-forge -c bioconda plastanno=2.0.4
+```
+
+Check what you are actually running (report this when asking for support, and
+when citing the tool in a paper):
+
+```bash
+plastanno --version
+```
+
+The ~266 MB reference database lives outside the environment (in your user data
+directory), so it **survives an upgrade** and does not need re-downloading. Only
+re-fetch it if a release note says the database itself changed:
+
+```bash
+plastanno fetch-db --force
+```
+
+> Installing on a shared/HPC Anaconda you do not own? If conda cannot write to
+> its package cache (`Could not open lockfile … pkgs/cache/cache.lock`, or a solve
+> that hangs indefinitely), point the cache at your own account — no `sudo`
+> needed:
+>
+> ```bash
+> export CONDA_PKGS_DIRS=$HOME/.conda/pkgs
+> ```
+
 ### From source (developers / unreleased code)
 
 Use this only to run a development checkout. Here `pip install .` is run **from
@@ -188,6 +224,25 @@ python3 plastanno.py run genome.fasta -o out/ --reference close_relative.gb
 # intronless tRNAs alongside ARAGORN/BLAST.
 python3 plastanno.py run genome.fasta -o out/ --trnascan
 ```
+
+### Naming the organism (needed for GenBank submission)
+
+Without `--organism`, the GenBank output carries the generic placeholder
+`Viridiplantae` in `/organism`, `SOURCE`/`ORGANISM` and the `DEFINITION` line
+(the run prints a reminder). That is fine for internal analysis, but it would
+assign the wrong taxon in an NCBI submission, and downstream tools that read
+`/organism` — for example CPJSdraw — will label every sample identically.
+
+```bash
+plastanno run CA1.fasta -o out/ --prefix CA1 --organism "Centella asiatica"
+```
+
+The name is written consistently to `DEFINITION`, `SOURCE`, `ORGANISM`,
+the source feature's `/organism`, and the circular-map title. The source feature
+also carries `/mol_type="genomic DNA"` and `/organelle="plastid:chloroplast"`.
+
+Use `--prefix` to give each sample a short, unique id: it becomes the GenBank
+`LOCUS` name (which the format limits to 16 characters) and the output filenames.
 
 ### Worked example
 
