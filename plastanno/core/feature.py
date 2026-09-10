@@ -30,6 +30,11 @@ class Feature:
     # empty, every exon is assumed to share `strand` (the normal cis-spliced case).
     exon_strands : List[int] = field(default_factory=list)
     has_intron : bool = False
+    # True for a gene whose exons are transcribed separately and spliced in trans
+    # (rps12). Set explicitly rather than inferred from `exon_strands`, because the
+    # IRb copy of rps12 happens to have all three exons on the same strand and
+    # would otherwise look cis-spliced to the writers.
+    is_trans_spliced : bool = False
 
     # Sequences
     protein    : str = ""     # AA sequence (CDS only)
@@ -48,6 +53,18 @@ class Feature:
     # Flags
     is_pseudogene   : bool = False
     pseudogene_reason: str = ""
+    # True when the spliced CDS length is not a multiple of 3, i.e. the boundary
+    # could not be resolved into whole codons. The feature is kept exactly as
+    # called; it is written as a partial CDS with no /translation.
+    orf_incomplete  : bool = False
+    # Number of frameshift indels Exonerate had to model in the alignment that
+    # produced this feature. Non-zero means the aligned extent is not a whole
+    # number of codons, so the reading frame is broken.
+    frameshifts     : int = 0
+    # True when the CDS begins at a recognised NON-ATG initiator (psbL/ndhD/...),
+    # which in plastids is created by C-to-U RNA editing. GenBank marks such a CDS
+    # with /exception="RNA editing"; without it the start codon is simply illegal.
+    rna_edited_start: bool = False
     flag            : str = "HIGH"  # HIGH/MEDIUM/NEEDS_REVIEW
     notes           : List[str] = field(default_factory=list)
 
@@ -91,6 +108,7 @@ class Feature:
             "strand"          : self.strand,
             "exons"           : self.exons,
             "has_intron"      : self.has_intron,
+            "is_trans_spliced": self.is_trans_spliced,
             "protein"         : self.protein,
             "engine"          : self.engine,
             "confidence"      : round(self.confidence, 3),
@@ -100,6 +118,9 @@ class Feature:
             "s_orf"           : round(self.s_orf, 3),
             "flag"            : self.flag,
             "is_pseudogene"   : self.is_pseudogene,
+            "orf_incomplete"  : self.orf_incomplete,
+            "frameshifts"     : self.frameshifts,
+            "rna_edited_start": self.rna_edited_start,
             "pseudogene_reason": self.pseudogene_reason,
             "notes"           : self.notes,
         }

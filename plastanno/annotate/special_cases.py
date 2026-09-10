@@ -282,6 +282,7 @@ def handle_rps12(annotations, genome_seq, ir_boundaries, protein_db=None):
             notes=["trans-spliced gene (%s copy, id=%.2f)" % (region, idn)],
         )
         feat.has_intron = True
+        feat.is_trans_spliced = True
         built.append(feat)
 
     if not built:
@@ -529,6 +530,150 @@ def handle_short_exon_genes(annotations, genome_seq,
     return annotations, changes
 
 
+def _missing_nterm_aa(feat, genome_seq, refs):
+    """How many residues are missing from the N-terminus of a single-exon CDS.
+
+    The feature holds only the long 3' exon, so its translation starts partway
+    into the protein. Aligning it to the closest reference gives that offset, and
+    3x it is where the missing 5' exon should be looked for. Returns None when no
+    reference corroborates the fragment.
+    """
+    seq = _coding_of(genome_seq, feat.start, feat.end, feat.strand)
+    prot = _translate(seq[: len(seq) // 3 * 3]).rstrip("*")
+    prot = prot.split("*")[0] if "*" in prot else prot
+    if len(prot) < 30 or not refs:
+        return None
+    best = None
+    for r in refs:
+        m = difflib.SequenceMatcher(None, prot, r, autojunk=False)
+        a, b, size = m.find_longest_match(0, len(prot), 0, len(r))
+        if size >= 25 and (best is None or size > best[1]):
+            best = (b - a, size)                  # offset of prot's start inside r
+    if best is None or best[0] <= 0:
+        return None
+    return best[0]
+
+
+def recover_missing_first_exon(annotations, genome_seq, gene_catalog, protein_db=None):
+    """Recover the 5' exon of a multi-exon CDS that was annotated as a single exon.
+
+    `handle_short_exon_genes` covers only petB/petD/rpl16, and its length search
+    (`_L_CANDS`) tops out at 12 bp, so it can only ever find a *tiny* first exon.
+    But the dominant boundary error is not that the first exon is short — it is
+    that it is MISSING. On DEV, 71.7% of all boundary errors are at the 5' end
+    alone, and the biggest offenders are genes whose first exon is nowhere near
+    tiny: rpoC1 (435 bp, 17 genomes), atpF (145 bp, 13), rps16 (40 bp, 11),
+    clpP (217 bp, 6). Exonerate reports only exon 2 and the annotated start is then
+    off by exon1 + intron — a median 5' error of +1123 bp for rpoC1.
+
+    This generalises the recovery: it fires whenever the catalog says the gene has
+    at least two exons but we produced one, and it sizes the search from the data
+    rather than a fixed list — the fragment is aligned to its reference proteins to
+    learn how many N-terminal residues are missing, and only that neighbourhood is
+    scanned for a start codon with a canonical donor site whose spliced product is
+    a clean ORF matching the reference N-terminus.
+    """
+    changes = []
+    if not protein_db:
+        return annotations, changes
+    cache = {}
+    for feat in annotations:
+        if feat.gene_type != "CDS" or feat.is_pseudogene or feat.exon_strands:
+            continue
+        if feat.exons and len(feat.exons) > 1:
+            continue                                  # already spliced
+        gene = feat.gene_name
+        if (gene_catalog.get(gene, {}) or {}).get("n_exons", 1) < 2:
+            continue                                  # single-exon gene — nothing to add
+        if gene in SHORT_EXON_GENES:
+            continue                                  # handled by the tiny-exon path
+        if gene not in cache:
+            cache[gene] = _load_ref_profile(protein_db, gene)
+        if not cache[gene]:
+            continue
+        profile, median_len, refs = cache[gene]
+        k = _missing_nterm_aa(feat, genome_seq, refs)
+        if k is None or k < 2:
+            continue
+        if _recover_first_exon_sized(feat, genome_seq, profile, median_len, 3 * k):
+            changes.append("%s: recovered missing 5' exon" % gene)
+    return annotations, changes
+
+
+_SIZE_SLACK = 15        # bp either side of the estimated first-exon length
+
+
+def _recover_first_exon_sized(feat, genome_seq, profile, median_len, est_len):
+    """Like `_recover_first_exon` but searching first-exon lengths around `est_len`
+    instead of the fixed 3-12 bp list, so a 435 bp rpoC1 exon 1 is reachable."""
+    e2s, e2e, strand = feat.start, feat.end, feat.strand
+    glen = len(genome_seq)
+    lengths = [L for L in range(max(3, est_len - _SIZE_SLACK), est_len + _SIZE_SLACK + 1)]
+
+    exon2_coding = {}
+    for d in range(_MAX_TRIM):
+        if strand == 1:
+            if genome_seq[e2s + d - 2:e2s + d] in _ACCEPTORS:
+                exon2_coding[d] = genome_seq[e2s + d:e2e]
+        else:
+            if _rc(genome_seq[e2e - d:e2e - d + 2]) in _ACCEPTORS:
+                exon2_coding[d] = _rc(genome_seq[e2s:e2e - d])
+    if not exon2_coding:
+        return False
+
+    best = None
+    if strand == 1:
+        lo = max(0, e2s - _MAX_INTRON - est_len - _SIZE_SLACK)
+        hi = e2s - _MIN_INTRON
+        for g in range(lo, hi):
+            if genome_seq[g:g + 3] != "ATG":
+                continue
+            for L in lengths:
+                e1e = g + L
+                if e1e > e2s - _MIN_INTRON:
+                    continue
+                if genome_seq[e1e:e1e + 2] != _DONOR:
+                    continue
+                e1c = genome_seq[g:e1e]
+                for d, e2c in exon2_coding.items():
+                    ok, sup = _score_spliced(e1c + e2c, profile, median_len)
+                    if ok and sup >= _MIN_SUPPORT:
+                        cand = (sup, -(e2s + d - e1e), (g, e1e), d)
+                        if best is None or cand > best:
+                            best = cand
+    else:
+        lo = e2e + _MIN_INTRON
+        hi = min(glen, e2e + _MAX_INTRON + est_len + _SIZE_SLACK)
+        for g in range(lo, hi):
+            if _rc(genome_seq[g - 3:g]) != "ATG":
+                continue
+            for L in lengths:
+                e1s = g - L
+                if e1s < e2e + _MIN_INTRON:
+                    continue
+                if _rc(genome_seq[e1s - 2:e1s]) != _DONOR:
+                    continue
+                e1c = _rc(genome_seq[e1s:g])
+                for d, e2c in exon2_coding.items():
+                    ok, sup = _score_spliced(e1c + e2c, profile, median_len)
+                    if ok and sup >= _MIN_SUPPORT:
+                        cand = (sup, -(e1s - (e2e - d)), (e1s, g), d)
+                        if best is None or cand > best:
+                            best = cand
+    if best is None:
+        return False
+    _sup, _gap, (a, b), d = best
+    if strand == 1:
+        feat.exons = [(a, b), (e2s + d, e2e)]
+    else:
+        feat.exons = [(e2s, e2e - d), (a, b)]
+    feat.exons.sort()
+    feat.start, feat.end = feat.exons[0][0], feat.exons[-1][1]
+    feat.has_intron = True
+    feat.notes.append("recovered missing 5' exon (%d bp)" % (b - a))
+    return True
+
+
 # ── ORF boundary completion (truncated single-exon CDS) ───────────────────────
 # Exonerate/HMM align a divergent reference protein only over its conserved core,
 # so single-exon CDS are often reported as a truncated piece of the true ORF —
@@ -559,7 +704,13 @@ def _complete_orf(feat, genome_seq, profile, median_len, refs):
         return False
     valid_starts = _valid_starts(feat.gene_name)
     glen = len(genome_seq)
-    w0, w1 = max(0, s - _ORF_PAD), min(glen, e + _ORF_PAD)
+    # Search window. The fixed pad covers most genes, but a long gene whose
+    # Exonerate hit is only a short conserved core needs a window wide enough to
+    # still reach the real stop codon — ycf1 typically comes back as ~800 bp of a
+    # ~5 kb ORF, and with the fixed 3.5 kb pad the stop lies outside the view, so
+    # completion silently fails. Scale the pad to the gene's own coding length.
+    pad = max(_ORF_PAD, int(median_len * 3 * 1.8))
+    w0, w1 = max(0, s - pad), min(glen, e + pad)
     if strand == 1:
         view = genome_seq[w0:w1]
         tomap = lambda a, b: (w0 + a, w0 + b)
@@ -669,35 +820,263 @@ def complete_single_exon_orfs(annotations, genome_seq, gene_catalog, protein_db=
     return annotations, changes
 
 
-# ── ycf1 pseudogene ───────────────────────────────────────────────────────────
-def handle_ycf1(annotations, genome_seq, ir_boundaries):
-    """
-    ycf1 appears twice:
-    1. Full-length in SSC (functional)
-    2. Truncated pseudogene at IRb/SSC junction
+# ── frame-broken CDS rescue ───────────────────────────────────────────────────
+_FS_WINDOW = 400      # bp searched either side when re-deriving a broken boundary
 
-    Mark the shorter copy as pseudogene.
-    """
-    ycf1_feats = [a for a in annotations
-                  if a.gene_name == "ycf1"]
-    other      = [a for a in annotations
-                  if a.gene_name != "ycf1"]
 
-    if len(ycf1_feats) < 2:
+def rescue_frame_broken_cds(annotations, genome_seq, gene_catalog, protein_db=None):
+    """Re-derive the boundary of a CDS whose spliced length is not a whole number
+    of codons, by searching for a complete ORF around it.
+
+    Exonerate's protein2genome models frameshifts: when the target carries a 1-2 bp
+    indel the aligner keeps going across it, and the reported extent is then not a
+    multiple of 3. Such a feature has no readable frame, so its translation picks up
+    spurious internal stops — and both repair steps that would normally fix a
+    boundary refuse to touch it, because `_complete_orf` gives up as soon as it sees
+    an internal stop and the terminal-stop snap requires an intact frame. The broken
+    extent is therefore written out verbatim.
+
+    This is the fallback for exactly those features. Following PGA (which resolves a
+    non-standard gene by hunting for a valid start and a valid stop rather than
+    trusting the alignment), we scan all three frames of a window around the hit for
+    complete ORFs — valid start codon, in-frame stop, no internal stop — and take
+    the one that best matches the gene's reference proteins.
+
+    Unlike PGA we never delete: PGA drops a gene it cannot resolve (5.4 genes per
+    genome in its own warning logs, against the 0.37 broken CDS per genome this
+    rescues), which costs real annotations. A feature we cannot re-derive keeps its
+    coordinates untouched and is written as a partial CDS instead.
+
+    Gated on `spliced % 3` so it can only ever see features that are already
+    invalid; a well-formed CDS is never touched.
+    """
+    changes = []
+    if not protein_db:
+        return annotations, changes
+    glen  = len(genome_seq)
+    cache = {}
+    for feat in annotations:
+        if feat.gene_type != "CDS" or feat.is_pseudogene or feat.exon_strands:
+            continue
+        exons = feat.exons or [(feat.start, feat.end)]
+        if sum(e - s for s, e in exons) % 3 == 0:
+            continue                              # frame intact — leave alone
+        gene = feat.gene_name
+        if gene not in cache:
+            cache[gene] = _load_ref_profile(protein_db, gene)
+        if not cache[gene]:
+            continue
+        _profile, median_len, refs = cache[gene]
+        starts = _valid_starts(gene)
+
+        w0, w1 = max(0, feat.start - _FS_WINDOW), min(glen, feat.end + _FS_WINDOW)
+        if feat.strand == 1:
+            view  = genome_seq[w0:w1]
+            tomap = lambda a, b: (w0 + a, w0 + b)
+        else:
+            view  = _rc(genome_seq[w0:w1])
+            tomap = lambda a, b: (w1 - b, w1 - a)
+        vlen = len(view)
+
+        best = None                               # (identity, length, (s, e))
+        for frame in range(3):
+            i = frame
+            while i + 3 <= vlen:
+                if view[i:i + 3].upper() in starts:
+                    # walk to the first in-frame stop
+                    j = i
+                    while j + 3 <= vlen and view[j:j + 3].upper() not in _STOPS:
+                        j += 3
+                    if j + 3 <= vlen:             # a real terminator was reached
+                        prot = _translate_orf(view[i:j + 3], starts)
+                        core = prot[:-1] if prot.endswith("*") else prot
+                        if (core and "*" not in core
+                                and 0.5 * median_len <= len(core) <= 1.6 * median_len):
+                            idn = max((difflib.SequenceMatcher(None, core, r,
+                                                               autojunk=False).ratio()
+                                       for r in refs), default=0.0)
+                            if idn >= 0.5 and (best is None or idn > best[0]):
+                                best = (idn, len(core), tomap(i, j + 3))
+                i += 3
+        if best is None:
+            continue
+        ns, ne = best[2]
+        # The rescued ORF must describe the SAME locus, not a neighbour that merely
+        # fell inside the search window.
+        if min(ne, feat.end) - max(ns, feat.start) <= 0:
+            continue
+        feat.start, feat.end = ns, ne
+        feat.exons = [(ns, ne)]
+        feat.notes.append(
+            "frame-broken alignment re-derived to a complete ORF (id=%.2f)" % best[0])
+        changes.append("%s: frame-broken boundary re-derived" % gene)
+    return annotations, changes
+
+
+# ── ycf1 ──────────────────────────────────────────────────────────────────────
+# A copy must reach this fraction of the catalog length to count as functional;
+# below it the copy is either the genuine IR-junction remnant or an Exonerate core
+# that could not be completed.
+_YCF1_FULL_RATIO = 0.6
+# Ignore anything shorter than this — stray micro-hits, not a reportable remnant.
+_YCF1_MIN_FRAG   = 200
+# Floor for the IR-derived copy. It can be lower than _YCF1_MIN_FRAG because that
+# copy is not a standalone hit: it is anchored on a confirmed full-length ycf1 and
+# on the measured IR boundaries. NCBI itself annotates ycf1 remnants as short as
+# 81 bp. Keeping a floor at all guards against an IR boundary that is off by a few
+# bases producing a spurious sliver.
+_YCF1_MIN_DERIVED = 60
+
+
+def _mirror_into_other_ir(span, ir_boundaries):
+    """Reflect a genomic interval from one inverted repeat into the other.
+
+    IRb and IRa are reverse complements of each other, so a base k positions from
+    the START of IRb sits k positions from the END of IRa. Returns the mirrored
+    (start, end) in the opposite repeat, or None when the interval is not wholly
+    inside either repeat. Pure arithmetic on the boundaries `ir_detector` already
+    computed — no search, no extra tool call.
+    """
+    irb, ira = ir_boundaries.get("IRb"), ir_boundaries.get("IRa")
+    if not irb or not ira:
+        return None
+    s, e = span
+    if irb[0] <= s and e <= irb[1]:
+        src, dst = irb, ira
+    elif ira[0] <= s and e <= ira[1]:
+        src, dst = ira, irb
+    else:
+        return None
+    return (dst[1] - (e - src[0]), dst[1] - (s - src[0]))
+
+
+def handle_ycf1(annotations, genome_seq, ir_boundaries, gene_catalog=None):
+    """Resolve the ycf1 copies of a plastome.
+
+    ycf1 straddles the IRb/SSC junction, so a standard plastome carries two copies:
+    the full-length functional gene in the SSC, and a truncated duplicate inside
+    the IR that NCBI annotates as a `gene` with /pseudo and no CDS.
+
+    ycf1 is the most divergent plastid ORF, so Exonerate routinely reports only a
+    short conserved core of it (e.g. 807 bp of a 5040 bp gene) and the HMM engine
+    often misses it entirely. `reconcile._select` therefore exempts ycf1 from its
+    minimum-length filter — that filter used to delete the gene outright from
+    23/111 DEV genomes that have it — and the length decision is made here instead,
+    after `complete_single_exon_orfs` has had its chance to extend each core to a
+    real ORF:
+
+      * copies at (near) full length stay functional CDS;
+      * a short copy inside the IR is the expected truncated duplicate and is kept
+        as a pseudogene;
+      * if no copy could be completed, the longest remnant is still reported as a
+        pseudogene rather than dropped silently;
+      * any other short copy is a stray core and is dropped, which is what the
+        length filter used to do.
+    """
+    ycf1_feats = [a for a in annotations if a.gene_name == "ycf1"]
+    if not ycf1_feats:
         return annotations, []
+    other = [a for a in annotations if a.gene_name != "ycf1"]
 
-    # Longest = functional, shortest = pseudogene
-    ycf1_feats.sort(key=lambda x: x.end-x.start,
-                    reverse=True)
-    ycf1_feats[0].is_pseudogene   = False
-    ycf1_feats[0].flag            = "HIGH"
+    expected = (gene_catalog or {}).get("ycf1", {}).get("expected_len", 0)
+    min_full = expected * _YCF1_FULL_RATIO
 
-    ycf1_feats[1].is_pseudogene    = True
-    ycf1_feats[1].pseudogene_reason= "truncated IR copy"
-    ycf1_feats[1].flag             = "MEDIUM"
-    ycf1_feats[1].notes.append("ycf1 pseudogene at IR junction")
+    def spliced(f):
+        return sum(e - s for s, e in f.exons) if f.exons else (f.end - f.start)
 
-    return other + ycf1_feats, ["ycf1: marked truncated copy as pseudogene"]
+    # `_select` clusters overlapping copies of a gene, but it runs BEFORE ORF
+    # completion. Two disjoint Exonerate cores of the same ycf1 are separate
+    # clusters at that point and both survive; completion then extends them into
+    # (nearly) the same full-length ORF, leaving a duplicate. Collapse copies that
+    # overlap now, keeping the one closest to the catalog length.
+    ycf1_feats.sort(key=lambda f: (f.start, f.end))
+    deduped = []
+    for f in ycf1_feats:
+        prev = next((g for g in deduped
+                     if min(f.end, g.end) - max(f.start, g.start) > 0), None)
+        if prev is None:
+            deduped.append(f)
+        elif (abs(spliced(f) - expected) < abs(spliced(prev) - expected) if expected
+              else spliced(f) > spliced(prev)):
+            deduped[deduped.index(prev)] = f
+    n_dup = len(ycf1_feats) - len(deduped)
+    ycf1_feats = deduped
+
+    def in_ir(f):
+        for key in ("IRa", "IRb"):
+            r = (ir_boundaries or {}).get(key)
+            if r and min(f.end, r[1]) - max(f.start, r[0]) > 0:
+                return True
+        return False
+
+    def as_pseudo(f, why):
+        f.is_pseudogene     = True
+        f.pseudogene_reason = why
+        f.flag              = "MEDIUM"
+
+    full  = [f for f in ycf1_feats if spliced(f) >= min_full]
+    short = [f for f in ycf1_feats if spliced(f) <  min_full]
+
+    kept, changes = [], []
+    for f in full:
+        f.is_pseudogene = False
+        kept.append(f)
+
+    remnants = [f for f in short if spliced(f) >= _YCF1_MIN_FRAG]
+    for f in remnants:
+        if in_ir(f):
+            as_pseudo(f, "truncated IR copy")
+            kept.append(f)
+    if not kept and remnants:
+        # No copy reached full length (IR-lacking or heavily reduced plastome).
+        # Report the best remnant as a pseudogene instead of annotating nothing.
+        best = max(remnants, key=spliced)
+        as_pseudo(best, "truncated copy; full-length ORF not recovered")
+        kept.append(best)
+
+    # Recover the IR-symmetric copy when the engines found only one. ycf1 straddles
+    # the SSC/IR junction, so whatever part of the functional copy lies inside one
+    # repeat is duplicated verbatim in the other — that duplicate IS the truncated
+    # pseudogene. Deriving it from the IR geometry is exact and free, whereas
+    # waiting for Exonerate to report a second hit on a gene this divergent failed
+    # on 8 of the 125 DEV genomes whose reference does annotate the pseudogene.
+    # The copy is marked as derived so it is never mistaken for an evidence-based
+    # call, and it is emitted as a pseudogene (gene only, no CDS), so it cannot
+    # affect CDS scoring.
+    if (len(kept) == 1 and not kept[0].is_pseudogene
+            and ir_boundaries and ir_boundaries.get("IRa") and ir_boundaries.get("IRb")):
+        f = kept[0]
+        for key in ("IRb", "IRa"):
+            rng = ir_boundaries[key]
+            lo, hi = max(f.start, rng[0]), min(f.end, rng[1])
+            if hi - lo < _YCF1_MIN_DERIVED:
+                continue
+            m = _mirror_into_other_ir((lo, hi), ir_boundaries)
+            if not m or min(m[1], f.end) - max(m[0], f.start) > 0:
+                continue
+            g = Feature(
+                gene_name="ycf1", gene_type="CDS",
+                product=f.product or "hypothetical chloroplast RF1",
+                start=m[0], end=m[1], strand=-f.strand,
+                exons=[(m[0], m[1])],
+                engine=f.engine, confidence=f.confidence,
+                notes=["derived from the %s copy by inverted-repeat symmetry" % key],
+            )
+            as_pseudo(g, "truncated IR copy")
+            kept.append(g)
+            changes.append("ycf1: derived truncated %s copy from IR symmetry"
+                           % ("IRa" if key == "IRb" else "IRb"))
+            break
+
+    n_pseudo  = sum(1 for f in kept if f.is_pseudogene)
+    n_dropped = len(ycf1_feats) - len(kept) + n_dup
+    if kept:
+        changes.append("ycf1: %d functional copy(ies), %d pseudogene(s)"
+                       % (len(kept) - n_pseudo, n_pseudo))
+    if n_dropped:
+        changes.append("ycf1: dropped %d unrecoverable fragment(s)" % n_dropped)
+
+    return other + kept, changes
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -732,15 +1111,27 @@ def run_all_special_cases(
     )
     all_changes.extend(changes)
 
+    # 3a-bis. Recover a missing 5' exon (rpoC1/atpF/rps16/clpP annotated as one exon)
+    annotations, changes = recover_missing_first_exon(
+        annotations, genome_seq, gene_catalog, protein_db
+    )
+    all_changes.extend(changes)
+
     # 3b. Complete truncated single-exon ORFs (accD, ndhK, rps18, ndhI, …)
     annotations, changes = complete_single_exon_orfs(
         annotations, genome_seq, gene_catalog, protein_db
     )
     all_changes.extend(changes)
 
-    # 4. ycf1 pseudogene
+    # 3c. Re-derive CDS whose alignment carried a frameshift (no readable frame)
+    annotations, changes = rescue_frame_broken_cds(
+        annotations, genome_seq, gene_catalog, protein_db
+    )
+    all_changes.extend(changes)
+
+    # 4. ycf1 full-length / IR-junction pseudogene
     annotations, changes = handle_ycf1(
-        annotations, genome_seq, ir_boundaries
+        annotations, genome_seq, ir_boundaries, gene_catalog
     )
     all_changes.extend(changes)
 

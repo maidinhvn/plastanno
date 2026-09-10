@@ -134,7 +134,8 @@ def _quality(f, gene_catalog):
     closeness = (1.0 - min(1.0, abs(span - exp) / exp)) if exp > 0 else 0.0
     # length-closeness dominates (best signal for "complete gene" vs "fragment"),
     # then cross-confirmation, then completeness (span), then confidence.
-    return (round(closeness, 3), _ENGINE_RANK.get(f.engine, 0), span, round(f.confidence, 3))
+    return (round(closeness, 3), _ENGINE_RANK.get(f.engine, 0),
+            span, round(f.confidence, 3))
 
 
 def _select(features, gene_catalog, ir_boundaries=None):
@@ -208,10 +209,17 @@ def _select(features, gene_catalog, ir_boundaries=None):
     # false positives (1561 FP vs 18 TP across 123 genomes). Applied to CDS only,
     # and only when the expected length is known; the spliced length is used so
     # multi-exon genes are judged on coding length, not outer span.
+    # ycf1 is exempt. It is the most divergent plastid ORF: Exonerate usually
+    # reports only a short conserved core of the real ~5 kb gene, and its second
+    # copy at the IRb/SSC junction is *genuinely* truncated. Applying the filter
+    # here deleted ycf1 entirely from 23 of the 111 DEV genomes that carry it. The
+    # length decision is deferred to annotate.special_cases.handle_ycf1, which runs
+    # after ORF completion has had a chance to extend the core to the full gene.
     MIN_LEN_RATIO = 0.6
+    LEN_FILTER_EXEMPT = {"ycf1"}
     final = []
     for f in kept:
-        if f.gene_type == "CDS":
+        if f.gene_type == "CDS" and f.gene_name not in LEN_FILTER_EXEMPT:
             exp = gene_catalog.get(f.gene_name, {}).get("expected_len", 0)
             if exp:
                 spliced = sum(e - s for s, e in f.exons) if f.exons else (f.end - f.start)
@@ -299,12 +307,12 @@ def reconcile(
         # while the HMM finds it whole). In that case take B's fuller coordinates.
         donor = fa
         if fa.gene_type == "CDS":
+            la = sum(e - s for s, e in fa.exons) if fa.exons else (fa.end - fa.start)
+            lb = sum(e - s for s, e in fb.exons) if fb.exons else (fb.end - fb.start)
             exp = gene_catalog.get(fa.gene_name, {}).get("expected_len", 0)
-            if exp:
-                la = sum(e - s for s, e in fa.exons) if fa.exons else (fa.end - fa.start)
-                lb = sum(e - s for s, e in fb.exons) if fb.exons else (fb.end - fb.start)
-                if la / exp < 0.6 and lb > la:
-                    donor = fb
+            if exp and la / exp < 0.6 and lb > la:
+                donor = fb
+        feat_frameshifts = getattr(fa, "frameshifts", 0)
         feat = Feature(
             gene_name=fa.gene_name, gene_type=fa.gene_type,
             product=donor.product or fa.product,
@@ -312,6 +320,7 @@ def reconcile(
             exons=donor.exons, protein=donor.protein, engine="AB",
             s_overlap=overlap, s_ref=fa.s_ref, s_model=fb.s_model,
         )
+        feat.frameshifts = feat_frameshifts
         feat.s_orf = validate_orf(feat, genome_seq, gene_catalog)
         if feat.gene_type == "CDS":
             avail = {"overlap", "ref", "model", "orf"}

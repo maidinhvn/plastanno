@@ -67,9 +67,33 @@ def _parse_trna(name):
             return aa1, (m.group(2) or "").replace("t", "u")
     return None, ""
 
+_RNA_COMP = {"a": "u", "u": "a", "g": "c", "c": "g"}
+
+
+def _revcomp_rna(s):
+    """Reverse complement of an RNA triplet, or '' if it is not one."""
+    try:
+        return "".join(_RNA_COMP[c] for c in reversed(s))
+    except KeyError:
+        return ""
+
+
 def name_match(a, b):
     """Names equal, OR (for tRNA) same amino acid and equal-or-omitted anticodon.
-    Different anticodon or different amino acid never match (real mis-calls kept)."""
+
+    A tRNA gene may be named after its ANTICODON (the usual plastid convention,
+    trnA-UGC) or after the CODON it reads (trnA-GCA); the two spellings are reverse
+    complements of one another and denote the SAME gene. Some GenBank records use
+    the codon form, so requiring the two triplets to be identical scored ~40 correct
+    calls per DEV run as a false negative plus a false positive
+    (trnL-UUG/trnL-CAA, trnV-GUC/trnV-GAC, trnI-AUC/trnI-GAU, trnA-GCA/trnA-UGC,
+    trnN-AAC/trnN-GUU). Accept the reverse-complement spelling as equal.
+
+    This is deliberately the ONLY relaxation: it never merges two genuinely distinct
+    tRNAs, because no plastid tRNA pair sharing an amino acid has one anticodon
+    equal to the reverse complement of the other — trnG-UCC/GCC, trnS-GCU/GGA and
+    trnR-CGU/UCG all remain mismatches, as they should.
+    """
     if a == b:
         return True
     a1, c1 = _parse_trna(a); a2, c2 = _parse_trna(b)
@@ -78,7 +102,7 @@ def name_match(a, b):
     if a1 != a2:
         return False
     if c1 and c2:
-        return c1 == c2
+        return c1 == c2 or _revcomp_rna(c1) == c2
     return True
 
 

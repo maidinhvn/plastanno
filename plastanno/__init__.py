@@ -6,4 +6,4 @@ can never disagree (a stale egg-info previously made `--version` report an old
 release while the code was newer).
 """
 
-__version__ = "2.0.4"
+__version__ = "2.0.5"

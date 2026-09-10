@@ -52,6 +52,34 @@ def _locus_name(name, maxlen=16):
     return f"{base[:maxlen - 5]}_{h}"
 
 
+def _spliced_len(ann):
+    """Total exon length of a feature (its coding length, introns excluded)."""
+    return sum(e - s for s, e in ann.exons) if ann.exons else (ann.end - ann.start)
+
+
+def _exon_parts(ann):
+    """Exons of a feature in transcript order, each with its own strand.
+
+    A trans-spliced gene (rps12) carries per-exon strands and an explicit
+    transcript order, so it is returned as given; an ordinary multi-exon gene is
+    ordered along the direction of transcription; anything else yields its own
+    single span. Shared by the GenBank and GFF3 writers so the two formats always
+    describe the same exon structure.
+    """
+    if ann.exon_strands and len(ann.exon_strands) == len(ann.exons):
+        return list(zip(ann.exons, ann.exon_strands))
+    if len(ann.exons) > 1:
+        ex = sorted(ann.exons)[::-1] if ann.strand == -1 else sorted(ann.exons)
+        return [(e, ann.strand) for e in ex]
+    return [((ann.start, ann.end), ann.strand)]
+
+
+def _is_trans_spliced(ann, parts):
+    """True for a trans-spliced gene: either the feature says so, or its exons do
+    not all lie on one strand."""
+    return bool(getattr(ann, "is_trans_spliced", False)) or len({st for _, st in parts}) > 1
+
+
 def write_genbank(annotations, genome_seq, accession,
                    genome_len, ir_boundaries, relatives,
                    out_path, organism=None):
@@ -67,7 +95,8 @@ def write_genbank(annotations, genome_seq, accession,
     from Bio import SeqIO
     from Bio.SeqRecord import SeqRecord
     from Bio.Seq import Seq
-    from Bio.SeqFeature import SeqFeature, FeatureLocation, CompoundLocation
+    from Bio.SeqFeature import (SeqFeature, FeatureLocation, CompoundLocation,
+                                BeforePosition, AfterPosition)
 
     org = (organism or "").strip() or PLACEHOLDER_ORGANISM
     # No trailing '.' — Biopython appends one when writing the DEFINITION line.
@@ -105,33 +134,13 @@ def write_genbank(annotations, genome_seq, accession,
 
     # Add annotations
     for ann in sorted(annotations, key=lambda x: x.start):
-        # Build exon locations
-        if ann.exon_strands and len(ann.exon_strands) == len(ann.exons):
-            # Trans-spliced gene: exons may lie on different strands. Keep the
-            # given transcript order and per-exon strand (do not re-sort).
-            parts = [FeatureLocation(s, e, st)
-                     for (s, e), st in zip(ann.exons, ann.exon_strands)]
-            loc = CompoundLocation(parts)
-        elif len(ann.exons) > 1:
-            parts = [
-                FeatureLocation(s, e, ann.strand)
-                for s, e in (sorted(ann.exons)[::-1] if ann.strand == -1 else sorted(ann.exons))
-            ]
-            loc = CompoundLocation(parts)
-        else:
-            loc = FeatureLocation(
-                ann.start, ann.end, ann.strand
-            )
-
-        qualifiers = {
-            "gene"   : [ann.gene_name],
-            "product": [ann.product or ann.gene_name],
-        }
-
-        # Add protein sequence for CDS
-        if ann.gene_type == "CDS" and ann.protein:
-            qualifiers["translation"] = [ann.protein]
-            qualifiers["codon_start"] = ["1"]
+        # Build exon locations. Exons are spliced out, so a multi-exon gene gets a
+        # join() and not its outer span; a trans-spliced gene keeps the given
+        # transcript order and per-exon strand (do not re-sort).
+        parts = _exon_parts(ann)
+        locs  = [FeatureLocation(s, e, st) for (s, e), st in parts]
+        loc   = locs[0] if len(locs) == 1 else CompoundLocation(locs)
+        trans = _is_trans_spliced(ann, parts)
 
         # Provenance notes (v2 improvement)
         note = (f"engine={ann.engine}; "
@@ -139,16 +148,62 @@ def write_genbank(annotations, genome_seq, accession,
                 f"flag={ann.flag}")
         if ann.notes:
             note += "; " + "; ".join(ann.notes)
-        qualifiers["note"] = [note]
+
+        gene_q = {"gene": [ann.gene_name]}
+        if trans:
+            # A join() whose segments lie on different strands is only valid with
+            # /trans_splicing; NCBI rejects it otherwise.
+            gene_q["trans_splicing"] = [None]
 
         if ann.is_pseudogene:
-            qualifiers["pseudo"] = [""]
-            qualifiers["note"][0] += \
-                f"; pseudogene_reason={ann.pseudogene_reason}"
+            # NCBI convention for a truncated remnant such as the IR copy of ycf1:
+            # a gene feature carrying /pseudo and NO coding feature — a pseudogene
+            # has no valid CDS or translation to report.
+            gene_q["pseudo"] = [None]
+            gene_q["note"]   = [note + f"; pseudogene_reason={ann.pseudogene_reason}"]
+            pl = loc if trans else FeatureLocation(ann.start, ann.end, ann.strand)
+            record.features.append(SeqFeature(pl, type="gene", qualifiers=gene_q))
+            continue
 
-        # Gene feature
+        qualifiers = {
+            "gene"   : [ann.gene_name],
+            "product": [ann.product or ann.gene_name],
+            "note"   : [note],
+        }
+        if trans:
+            qualifiers["trans_splicing"] = [None]
+
+        # Add protein sequence for CDS
+        if getattr(ann, "rna_edited_start", False):
+            qualifiers["exception"] = ["RNA editing"]
+        if ann.gene_type == "CDS" and ann.protein:
+            qualifiers["translation"] = [ann.protein]
+            qualifiers["codon_start"] = ["1"]
+        elif ann.gene_type == "CDS" and getattr(ann, "orf_incomplete", False):
+            # Unresolved boundary: mark both ends partial ('<'/'>') so the length is
+            # legally not a multiple of 3, and give codon_start without asserting a
+            # translation. The coordinates are the ones we called — nothing moved.
+            qualifiers["codon_start"] = ["1"]
+            # '<' goes before the lowest coordinate and '>' after the highest,
+            # independent of strand (Biopython renders the complement form).
+            i_lo = min(range(len(locs)), key=lambda i: int(locs[i].start))
+            i_hi = max(range(len(locs)), key=lambda i: int(locs[i].end))
+            locs = [FeatureLocation(BeforePosition(int(l.start)) if i == i_lo else l.start,
+                                    AfterPosition(int(l.end))   if i == i_hi else l.end,
+                                    l.strand)
+                    for i, l in enumerate(locs)]
+            loc = locs[0] if len(locs) == 1 else CompoundLocation(locs)
+
+        # Gene feature. A gene is ONE interval spanning its introns — only the
+        # coding feature is spliced. The reference records are unambiguous
+        # (rpoC1/clpP/ndhB/petB/trnK-UUU all have a single-interval gene over a
+        # multi-interval CDS), and emitting a join() here draws NCBI's
+        # MultiIntervalGene warning. The exception is a trans-spliced gene, whose
+        # pieces are transcribed separately: there the reference does use a join,
+        # with /trans_splicing (rps12).
+        gene_loc = loc if trans else FeatureLocation(ann.start, ann.end, ann.strand)
         record.features.append(SeqFeature(
-            loc, type="gene", qualifiers={"gene":[ann.gene_name]}
+            gene_loc, type="gene", qualifiers=gene_q
         ))
 
         # CDS/tRNA/rRNA feature
@@ -162,13 +217,25 @@ def write_genbank(annotations, genome_seq, accession,
 
 def write_gff3(annotations, genome_len, accession, out_path):
     """Write GFF3 format with confidence flags."""
+    # Feature IDs must be unique — GFF3 parsers treat repeated IDs as one feature.
+    # "<gene>_<start>" alone is not: the two trans-spliced rps12 copies share their
+    # 5' exon, so both copies produced ID=rps12_<same start> and a parser merged
+    # them into a single six-exon gene. Disambiguate a repeat with a numeric
+    # suffix; genes that are already unique keep the familiar form.
+    used = {}
+    def _uid(ann):
+        base = f"{ann.gene_name}_{ann.start}"
+        used[base] = used.get(base, 0) + 1
+        return base if used[base] == 1 else f"{base}.{used[base]}"
+
     with open(out_path, "w") as f:
         f.write("##gff-version 3\n")
         f.write(f"##sequence-region {accession} 1 {genome_len}\n")
 
         for ann in sorted(annotations, key=lambda x: x.start):
             strand = _strand_str(ann.strand)
-            attrs  = (f"ID={ann.gene_name}_{ann.start};"
+            gid    = _uid(ann)
+            attrs  = (f"ID={gid};"
                       f"Name={ann.gene_name};"
                       f"engine={ann.engine};"
                       f"confidence={ann.confidence:.2f};"
@@ -176,22 +243,39 @@ def write_gff3(annotations, genome_len, accession, out_path):
             if ann.is_pseudogene:
                 attrs += ";pseudo=true"
 
-            # Gene line
+            # Gene line — the outer span, introns included (this is what a gene
+            # feature means in GFF3).
             f.write("\t".join([
                 accession, "Plastanno", "gene",
                 str(ann.start+1), str(ann.end),
                 ".", strand, ".", attrs
             ]) + "\n")
 
-            # Feature line
+            if ann.is_pseudogene:
+                # No coding feature for a pseudogene, matching the GenBank writer.
+                continue
+
+            # Coding/RNA lines — ONE PER EXON. Emitting a single line spanning
+            # ann.start..ann.end made every intron-containing gene look like an
+            # uninterrupted coding sequence, and reported the trans-spliced rps12
+            # as a ~70 kb CDS (its three exons are split across the LSC and the
+            # IR). Column 8 carries the CDS phase, as the GFF3 spec requires.
+            parts     = _exon_parts(ann)
             feat_type = ann.gene_type
-            f.write("\t".join([
-                accession, "Plastanno", feat_type,
-                str(ann.start+1), str(ann.end),
-                f"{ann.confidence:.2f}", strand, ".",
-                f"Parent={ann.gene_name}_{ann.start};"
-                f"product={ann.product or ann.gene_name}"
-            ]) + "\n")
+            parent    = gid
+            trans     = ";trans_splicing=true" if _is_trans_spliced(ann, parts) else ""
+            coding    = 0
+            for (es, ee), est in parts:
+                phase = str((3 - coding % 3) % 3) if feat_type == "CDS" else "."
+                f.write("\t".join([
+                    accession, "Plastanno", feat_type,
+                    str(es+1), str(ee),
+                    f"{ann.confidence:.2f}", _strand_str(est), phase,
+                    f"ID={feat_type.lower()}-{parent};"
+                    f"Parent={parent};"
+                    f"product={ann.product or ann.gene_name}{trans}"
+                ]) + "\n")
+                coding += ee - es
 
 
 def write_fasta_files(annotations, genome_seq,
@@ -213,6 +297,8 @@ def write_fasta_files(annotations, genome_seq,
                       f"flag={ann.flag}")
 
             if ann.gene_type == "CDS":
+                if ann.is_pseudogene:
+                    continue          # no coding sequence to report
                 if ann.protein:
                     faa.write(f"{header}\n{ann.protein}\n")
                 # Extract nucleotide
@@ -242,7 +328,7 @@ def _populate_proteins(annotations, genome_seq):
     from Bio.Seq import Seq
     from ..core.reconcile import SPECIAL_START_CODONS
     for ann in annotations:
-        if ann.gene_type != "CDS" or ann.protein:
+        if ann.gene_type != "CDS" or ann.protein or ann.is_pseudogene:
             continue
         exons = ann.exons or [(ann.start, ann.end)]
         seq = _extract_seq(genome_seq, exons, ann.strand, ann.exon_strands)
@@ -312,6 +398,139 @@ OTHER_GENES = {
     "ycf15": "Conserved hypothetical ORF",
     "lhbA": "Conserved hypothetical ORF",
 }
+
+
+_AA3_BY_LETTER = {
+    "A": "Ala", "R": "Arg", "N": "Asn", "D": "Asp", "C": "Cys", "Q": "Gln",
+    "E": "Glu", "G": "Gly", "H": "His", "I": "Ile", "L": "Leu", "K": "Lys",
+    "M": "Met", "F": "Phe", "P": "Pro", "S": "Ser", "T": "Thr", "W": "Trp",
+    "Y": "Tyr", "V": "Val",
+}
+
+
+def _trna_product(gene_name):
+    """NCBI product name for a tRNA gene, e.g. trnA-UGC -> 'tRNA-Ala'.
+
+    The gene NAME (trnA-UGC) is not a valid /product: table2asn rejects it with
+    MissingTrnaAA because it cannot read the encoded amino acid out of it. The
+    product must name the amino acid. trnfM is the formyl-methionine initiator,
+    which NCBI writes as tRNA-Met.
+    """
+    m = re.match(r"^trn([A-Za-z]{1,2})", gene_name or "")
+    if not m:
+        return None
+    tag = m.group(1)
+    letter = "M" if tag.lower() in ("fm", "im") else tag[0].upper()
+    aa = _AA3_BY_LETTER.get(letter)
+    return "tRNA-%s" % aa if aa else None
+
+
+def write_tbl(annotations, accession, out_path, organism=None):
+    """Write an NCBI 5-column feature table (.tbl).
+
+    A GenBank flatfile is a *distribution* format: NCBI does not accept one as an
+    annotation submission. The submission route for an organelle genome is
+    table2asn, which takes the sequence (.fsa) plus this feature table and produces
+    the .sqn that is actually sent. Without a .tbl the annotation cannot be
+    submitted at all, however valid the .gb file is.
+
+    Format: a '>Feature <seqid>' header, then per feature one line of
+    'start<TAB>end<TAB>key' followed by one 'start<TAB>end' line per additional
+    interval, then '<TAB><TAB><TAB>qualifier<TAB>value' lines. Coordinates are
+    1-based and INCLUSIVE, and a minus-strand feature is written with start > end,
+    so the intervals are emitted in transcript order. '<' / '>' mark an unresolved
+    end, exactly as in the GenBank location.
+    """
+    lines = [">Feature %s" % _sanitize_id(accession)]
+    _seen = {}
+
+    def _locus_tag(ann):
+        """A locus_tag unique within the record: PLAS_<gene>[_2] for a second copy."""
+        base = re.sub(r"[^A-Za-z0-9]", "", ann.gene_name) or "gene"
+        _seen[base] = _seen.get(base, 0) + 1
+        n = _seen[base]
+        return "PLAS_%s" % base if n == 1 else "PLAS_%s_%d" % (base, n)
+    for ann in sorted(annotations, key=lambda x: x.start):
+        parts = _exon_parts(ann)
+        partial = (ann.gene_type == "CDS" and getattr(ann, "orf_incomplete", False))
+
+        def _iv(seg, st, first, last):
+            s0, e0 = seg
+            a, b = (s0 + 1, e0) if st != -1 else (e0, s0 + 1)
+            lo = "<" if (first and partial) else ""
+            hi = ">" if (last and partial) else ""
+            return "%s%d\t%s%d" % (lo, a, hi, b)
+
+        n = len(parts)
+        rows = [_iv(seg, st, i == 0, i == n - 1) for i, (seg, st) in enumerate(parts)]
+
+        # gene feature — the SAME interval structure as the product feature, not the
+        # outer span. A trans-spliced rps12 spans ~70 kb end to end, so a single
+        # interval made the gene swallow every locus in between (table2asn:
+        # "Gene contains 57 other genes"). The GenBank writer already emits a
+        # join() here, and the reference records do too.
+        trans = _is_trans_spliced(ann, parts)
+        if trans:
+            lines.append("%s\tgene" % rows[0])
+            lines.extend(rows[1:])
+        else:
+            gs, ge = ann.start + 1, ann.end
+            if ann.strand == -1:
+                gs, ge = ann.end, ann.start + 1
+            lines.append("%s%d\t%s%d\tgene"
+                         % ("<" if partial else "", gs, ">" if partial else "", ge))
+        lines.append("\t\t\tgene\t%s" % ann.gene_name)
+        if trans:
+            # a gene whose intervals lie on different strands is only legal with
+            # /trans_splicing (table2asn: MixedStrand otherwise)
+            lines.append("\t\t\ttrans_splicing")
+        # A unique locus_tag is what ties a product feature to ITS gene. Without one
+        # the two IR copies of a gene share a name, and table2asn attached each CDS
+        # to whichever copy it saw first - on the wrong strand half the time
+        # (GeneXrefStrandProblem / CDSgeneRange).
+        tag = _locus_tag(ann)
+        lines.append("\t\t\tlocus_tag\t%s" % tag)
+        if ann.is_pseudogene:
+            lines.append("\t\t\tpseudo")
+            continue                       # a pseudogene gets no product feature
+
+        lines.append("%s\t%s" % (rows[0], ann.gene_type))
+        lines.extend(rows[1:])
+        product = ann.product or ann.gene_name
+        if ann.gene_type == "tRNA":
+            product = _trna_product(ann.gene_name) or product
+        lines.append("\t\t\tproduct\t%s" % product)
+        lines.append("\t\t\tgene\t%s" % ann.gene_name)
+        lines.append("\t\t\tlocus_tag\t%s" % tag)
+        if getattr(ann, "rna_edited_start", False):
+            # /exception alone is not enough: with no /translation in a .tbl,
+            # table2asn translates the CDS itself and an ACG start yields a protein
+            # that does not begin with Met (BadProteinStart). /transl_except names
+            # the edited codon explicitly, exactly as the reference records do.
+            fs, fe = parts[0][0]
+            st0 = parts[0][1]
+            if st0 == -1:
+                pos = "%d..%d" % (fe - 2, fe)
+                pos = "complement(%s)" % pos
+            else:
+                pos = "%d..%d" % (fs + 1, fs + 3)
+            # /transl_except ALONE. Pairing it with /exception="RNA editing" is
+            # rejected (TranslExceptAndRnaEditing): the reference records can use
+            # the bare exception because they carry a /translation, but a feature
+            # table has none, so the edited codon must be named explicitly.
+            lines.append("\t\t\ttransl_except\t(pos:%s,aa:Met)" % pos)
+        if ann.gene_type == "CDS":
+            lines.append("\t\t\ttransl_table\t11")
+            if partial or ann.protein:
+                lines.append("\t\t\tcodon_start\t1")
+        if trans:
+            lines.append("\t\t\ttrans_splicing")
+        if ann.flag == "NEEDS_REVIEW":
+            lines.append("\t\t\tnote\tlow-confidence prediction; requires review")
+
+    with open(out_path, "w") as f:
+        f.write("\n".join(lines) + "\n")
+    return out_path
 
 
 def write_report(annotations, accession, genome_len,
@@ -458,6 +677,42 @@ def write_all(annotations, genome_seq, accession,
             ann.notes.append(
                 f"internal stop codon(s) (n={n_stop}): possible pseudogene or RNA-editing site")
 
+    # QC: a CDS whose spliced length is not a multiple of 3 cannot be read as whole
+    # codons, so the record is not a valid coding sequence and any /translation we
+    # computed from it is meaningless. The cause is genuinely unknown at this point
+    # — an unresolved boundary, a real frameshift, an assembly indel — so we do NOT
+    # guess: nothing is deleted, no pseudogene is asserted, and the coordinates stay
+    # exactly as called. We only stop claiming what we cannot support: the bogus
+    # translation is dropped and the feature is written as a *partial* CDS (see
+    # write_genbank), which is the standard GenBank form for an unresolved boundary
+    # and makes a non-multiple-of-3 length legal. The NEEDS_REVIEW flag and the note
+    # tell the user to inspect it.
+    # QC: flag a CDS that starts at a recognised non-ATG initiator. In plastids that
+    # start codon is created by C-to-U RNA editing of the transcript, so the genomic
+    # sequence legitimately reads ACG/GTG. GenBank records mark it with
+    # /exception="RNA editing" (psbL and ndhD in the references); without the
+    # qualifier a validator rejects the start codon outright.
+    from ..core.reconcile import SPECIAL_START_CODONS as _SSC
+    for ann in annotations:
+        if ann.gene_type != "CDS" or ann.is_pseudogene:
+            continue
+        alts = _SSC.get(ann.gene_name)
+        if not alts:
+            continue
+        exons = ann.exons or [(ann.start, ann.end)]
+        seq = _extract_seq(genome_seq, exons, ann.strand, ann.exon_strands)
+        if seq[:3].upper() in tuple(alts):
+            ann.rna_edited_start = True
+
+    for ann in annotations:
+        if ann.gene_type == "CDS" and not ann.is_pseudogene and _spliced_len(ann) % 3:
+            ann.orf_incomplete = True
+            ann.protein        = ""
+            ann.flag           = "NEEDS_REVIEW"
+            ann.notes.append(
+                "spliced length %d is not a multiple of 3: unresolved boundary; "
+                "annotated as a partial CDS, translation withheld" % _spliced_len(ann))
+
     # GenBank
     gb_path = out_dir / f"{seq_id}.gb"
     write_genbank(
@@ -470,6 +725,11 @@ def write_all(annotations, genome_seq, accession,
     gff_path = out_dir / f"{seq_id}.gff3"
     write_gff3(annotations, genome_len, seq_id, gff_path)
     files.append(gff_path)
+
+    # NCBI feature table — the format table2asn needs for a submission
+    tbl_path = out_dir / f"{seq_id}.tbl"
+    write_tbl(annotations, seq_id, tbl_path, organism=organism)
+    files.append(tbl_path)
 
     # FASTA files
     faa, ffn, frn = write_fasta_files(

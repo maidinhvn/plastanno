@@ -120,6 +120,15 @@ def _parse_exonerate_gff(gff_text, gene_name, prot_acc, offset):
     so multi-exon genes were flattened into a single span that included introns.
     This version collects every coding segment into Feature.exons (0-based,
     half-open, genome coordinates, ascending) so spliced genes are correct.
+
+    The 'exon' line's attributes also report how many insertions/deletions the
+    alignment had to introduce. protein2genome models frameshifts, so a non-zero
+    count means the aligned extent is NOT a whole number of codons: the segment
+    length is not a multiple of 3, the reading frame breaks, and downstream
+    translation picks up spurious internal stops. That information was previously
+    discarded, and such an alignment was written out as if it were a clean coding
+    sequence. We now carry it on the Feature (`frameshifts`) so selection can
+    prefer a frame-clean candidate for the same locus.
     """
     hits = []
     cur = None
@@ -135,6 +144,10 @@ def _parse_exonerate_gff(gff_text, gene_name, prot_acc, offset):
         )
         feat.exons = exons
         feat.has_intron = len(exons) > 1
+        feat.frameshifts = h["indels"]
+        if h["indels"]:
+            feat.notes.append(
+                "Exonerate alignment contains %d frameshift indel(s)" % h["indels"])
         hits.append(feat)
 
     for line in gff_text.split("\n"):
@@ -160,9 +173,19 @@ def _parse_exonerate_gff(gff_text, gene_name, prot_acc, offset):
                     except Exception:
                         pass
             cur = {"gstart": start, "gend": end, "strand": strand,
-                   "sim": sim, "cds": [], "exon": []}
+                   "sim": sim, "cds": [], "exon": [], "indels": 0}
         elif cur is not None:
             cur[ftype].append((start, end))
+            if ftype == "exon":
+                # "insertions 0 ; deletions 1 ; identity ..." — a non-zero count is
+                # a frameshift Exonerate had to model to keep the alignment going.
+                for attr in parts[8].split(";"):
+                    a = attr.strip().lower()
+                    if a.startswith(("insertions", "deletions")):
+                        try:
+                            cur["indels"] += int(a.split()[-1])
+                        except Exception:
+                            pass
 
     finalize(cur)
     return hits

@@ -269,7 +269,8 @@ summary, and `..._map.png` for the circular map.
 | File | Contents |
 |------|----------|
 | `<acc>.gb` | GenBank with provenance in each `/note` |
-| `<acc>.gff3` | GFF3 with confidence flags |
+| `<acc>.gff3` | GFF3 with confidence flags; one CDS line per exon, with phase |
+| `<acc>.tbl` | NCBI 5-column feature table — the file `table2asn` needs to build a submission (`.sqn`); supply your own `.sbt` template |
 | `<acc>.faa` / `.ffn` / `.frn` | protein / CDS-nucleotide / RNA FASTA |
 | `<acc>.report` | QC summary: IR boundaries, confidence distribution, a categorised functional gene table, and features flagged for review |
 | `<acc>_map.png/.pdf/.svg` | circular plastome map (unless `--no-plot`) |
