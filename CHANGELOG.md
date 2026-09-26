@@ -4,6 +4,91 @@ All notable changes to Plastanno v2. Benchmarks are measured on the DEV split
 (n=123 shared genomes) against reference GenBank annotations; the held-out set is
 never used during development.
 
+## [3.0.0] — 2026-09-26
+
+The pooled-architecture line, developed over 90 commits, reaches the public
+release. 2.0.5 predates it entirely, so this is the architecture the tool was
+refactored into rather than a patch on top of the previous one.
+
+**A major version because upgrading changes results and requires more of the
+environment.** Every changed default keeps a `legacy` setting that reproduces the
+2.0.5 behaviour, so a run can be pinned to the old output if needed.
+
+### Changed — defaults that alter annotation output
+
+- `--mode pooled` — candidate pooling with a B-primary/A-rescue rule, replacing
+  the cross-engine integration layer. `--mode legacy` restores it.
+- `--trna-mode hybrid` — intron-free tRNA boundaries come from tRNAscan-SE while
+  the set of loci, intron models and naming stay as before. Costs roughly 4x
+  runtime. `--trna-mode legacy` restores ARAGORN/exon-DB boundaries and removes
+  the tRNAscan-SE requirement.
+- `--exon-mode aragorn` — ARAGORN's own structural intron call is preferred over
+  the exon-database call at intron-bearing tRNA loci. `--exon-mode legacy`
+  restores the previous ranking.
+- `--intron-mode glocal` — **new.** For the seven intron-bearing tRNA (trnA-UGC,
+  trnI-GAU, trnL-UAA, trnK-UUU, trnV-UAC, trnG-UCC, trnG-GCC), each reference
+  exon is aligned end to end inside the existing call's window and donors vote
+  per coordinate, so the boundary follows reference geometry instead of where
+  local similarity tails off. It does not model the intron; the intron is the gap
+  between the two exons. Inventory, naming and every other feature class are
+  untouched. `--intron-mode legacy` restores ARAGORN's structural call.
+
+### Changed — requirements
+
+- **tRNAscan-SE is now required**, not optional. The default tRNA mode needs it
+  and `pipeline.run` checks for the binary before any work starts, raising
+  `TrnascanUnavailable` rather than failing later. Use `--trna-mode legacy` to
+  run without it.
+- **numpy and scipy are now required.** Reconciliation pairs the two engines'
+  calls with a maximum-weight assignment (`scipy.optimize.linear_sum_assignment`)
+  over a numpy cost matrix, on essentially every genome.
+- `environment.yml` had described tRNAscan-SE as optional and omitted numpy and
+  scipy; it, `pyproject.toml` and the conda recipe now agree.
+
+### Fixed
+
+- **`tRNA-???` aborted the whole genome.** ARAGORN writes that when it finds a
+  tRNA structure it cannot assign an amino acid to — ordinary output, not
+  corruption. The fail-loud parser treated it as an unreadable coordinate and
+  raised, losing the entire annotation; three of sixty genomes in one benchmark
+  sample died this way. One unassignable line now costs one candidate, with a
+  warning. Genuinely malformed coordinates still raise.
+- **`plastanno run --help` crashed.** A help string contained `84.1% legacy`,
+  which argparse read as a format specifier (`% l` + `e`), so both `run --help`
+  and `batch --help` raised instead of printing.
+- **`fetch-db` could install where the tool would not look.** `fetch_db` and
+  `paths` each resolved the user-data directory separately and the two copies had
+  drifted: without `platformdirs`, `fetch-db` wrote to `~/.local/share/plastanno`
+  while `db_root` skipped that location and returned the repo layout — so a user
+  could download 267 MB and still be told the database was missing.
+  `paths.user_data_parent` is now the single source of truth for both.
+
+### Changed — reference database
+
+The bundle gains eight genes the previous one lacked: chlB, chlL, chlN, lhbA,
+pafI, pafII, rpl21 and ycf66, each with an HMM profile and a protein FASTA, with
+`hmm_db/all_profiles.hmm` regenerated. Everything else is byte-identical to the
+previous bundle. Published as Zenodo record 22960386 (concept DOI
+10.5281/zenodo.20807994 continues to resolve to the newest version).
+
+**Existing installations must re-fetch:** `plastanno fetch-db --force`.
+
+`database_CHECKSUMS.sha256` is regenerated with 5634 entries. It now also covers
+`boundary_db/*` and `exon_templates.json`, which ship in the repository but were
+missing from the previous list — so `sha256sum -c` used to fail for every user.
+The six `*.bak` entries, development snapshots that are not part of the package,
+are dropped.
+
+### Added — tests
+
+Thirteen test files, 206 checks, none needing an external dataset:
+
+    for t in tests/test_*.py; do python3 "$t" || echo "FAILED: $t"; done
+
+The benchmark scoring machinery and its own tests are not in this repository;
+they score against reference files that are not distributed. See
+`tests/README.md`.
+
 ## [2.0.5] — 2026-09-11
 
 Reported by a user: ycf1 was missing entirely from the output, and rps12 was
