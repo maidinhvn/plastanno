@@ -43,6 +43,10 @@ def run(
     use_trnascan: bool = False,
     organism    : Optional[str] = None,
     verbose     : bool = False,
+    mode        : str = "pooled",
+    trna_mode   : str = "hybrid",
+    exon_mode   : str = "aragorn",
+    intron_mode : str = "glocal",
 ) -> dict:
     """
     Main annotation pipeline.
@@ -59,6 +63,21 @@ def run(
     """
     import json
     from Bio import SeqIO
+
+    if mode not in ("legacy", "pooled"):
+        raise ValueError("unknown reconciliation mode %r (legacy|pooled)" % mode)
+    if trna_mode not in ("legacy", "hybrid"):
+        raise ValueError("unknown tRNA mode %r (legacy|hybrid)" % trna_mode)
+    if exon_mode not in ("legacy", "aragorn"):
+        raise ValueError("unknown exon mode %r (legacy|aragorn)" % exon_mode)
+    if intron_mode not in ("legacy", "glocal"):
+        raise ValueError("unknown intron mode %r (legacy|glocal)" % intron_mode)
+    # Hybrid is the default, so its dependency is checked before any work starts
+    # rather than at step 6b. Failing after Exonerate, the HMM search and
+    # reconciliation have run wastes minutes to report a missing binary.
+    if trna_mode == "hybrid":
+        from .identify.trna_hybrid import require_trnascan
+        require_trnascan()
 
     t_start = time.time()
     out_dir = Path(output_dir)
@@ -136,6 +155,7 @@ def run(
     t4b = time.time()
     from .identify.engine_b import run_engine_b
     features_b = run_engine_b(
+        exon_mode=exon_mode,
         genome_seq   = genome_seq,
         ir_boundaries= ir_boundaries,
         relatives    = relatives,
@@ -154,15 +174,25 @@ def run(
           f"({time.time()-t4b:.1f}s)")
 
     # ── Step 5: Reconciliation ────────────────────────────────────────────────
-    print("\n[5/7] Reconciliation...")
+    print("\n[5/7] Reconciliation (mode=%s)..." % mode)
     t5 = time.time()
-    annotations = reconcile(
-        engine_a    = features_a,
-        engine_b    = features_b,
-        genome_seq  = genome_seq,
-        gene_catalog= gene_catalog,
-        ir_boundaries= ir_boundaries,
-    )
+    if mode == "pooled":
+        from .core.reconcile import reconcile_pooled
+        annotations = reconcile_pooled(
+            engine_a    = features_a,
+            engine_b    = features_b,
+            genome_seq  = genome_seq,
+            gene_catalog= gene_catalog,
+            ir_boundaries= ir_boundaries,
+        )
+    else:
+        annotations = reconcile(
+            engine_a    = features_a,
+            engine_b    = features_b,
+            genome_seq  = genome_seq,
+            gene_catalog= gene_catalog,
+            ir_boundaries= ir_boundaries,
+        )
 
     high   = sum(1 for a in annotations if a.flag=="HIGH")
     medium = sum(1 for a in annotations if a.flag=="MEDIUM")
@@ -191,6 +221,98 @@ def run(
     if n_refined:
         print(f"      Splice-site refined: {n_refined} multi-exon CDS")
 
+    # ── Step 6b-ii: hybrid tRNA boundaries ────────────────────────────────────
+    #
+    # Placed HERE, after reconciliation and after the special cases, and not in
+    # Engine B where it started. Every step that decides the inventory --
+    # reconcile._select clustering same-name features that overlap at all, and
+    # the name normalisation that reads IR membership -- has already run, on
+    # legacy coordinates. So "legacy decides which loci exist, tRNAscan-SE
+    # decides only where the intron-free ones begin and end" stops being an
+    # intention and becomes a property of the call order.
+    #
+    # Invariance is structural rather than measured: apply_trnascan_geometry
+    # writes only .start, .end, .exons and .notes on features that are already
+    # in `annotations`. It never appends to the list, removes from it, or
+    # filters it. There is no path by which the inventory, the identities, the
+    # copy multiplicity, the IR copies, the CDS or the rRNA can change. The
+    # check below is therefore a guard against a future edit breaking that
+    # property, not evidence that it holds today.
+    if trna_mode == "hybrid":
+        from .identify.trna_hybrid import (run_trnascan_circular,
+                                           apply_trnascan_geometry)
+        from collections import Counter as _Counter
+        print("\n[6b] tRNA boundaries from tRNAscan-SE (hybrid)...")
+
+        def _inv(anns):
+            return _Counter((a.gene_name, a.gene_type, a.strand) for a in anns)
+
+        before = _inv(annotations)
+        trnas = [a for a in annotations if a.gene_type == "tRNA"]
+        ts_hits = run_trnascan_circular(genome_seq)
+        print(f"      tRNAscan-SE (circular, 2 frames): {len(ts_hits)} tRNAs")
+        diag = []
+        apply_trnascan_geometry(trnas, ts_hits, genome_len, diagnostics=diag)
+        for d in diag:
+            print(f"      [hybrid] {d}")
+        after = _inv(annotations)
+        if before != after:
+            raise RuntimeError(
+                "hybrid tRNA geometry changed the annotation inventory; this "
+                "must be impossible. gained=%r lost=%r"
+                % (dict(after - before), dict(before - after)))
+        moved = sum(1 for a in trnas
+                    if any(n == "geometry_source=tRNAscan-SE" for n in a.notes))
+        print(f"      boundaries replaced: {moved} / {len(trnas)} tRNA "
+              f"(inventory unchanged: {sum(before.values())} features)")
+
+    # ── Step 6b-iii: intron-bearing tRNA boundaries ───────────────────────────
+    #
+    # Here for the same reason as 6b-ii, and the reason is not stylistic: this
+    # started life inside Engine B, and moving a feature there turned a boundary
+    # change into an inventory change, because reconcile._select clusters
+    # same-name features that overlap *at all*. Two duplicates nudged onto new
+    # boundaries stopped overlapping and both survived. By this point every step
+    # that decides which loci exist has already run.
+    #
+    # refine_intron_trna writes only .start, .end, .exons and .notes on features
+    # already in `annotations`. The guard below does not prove that; it catches
+    # a future edit that breaks it.
+    if intron_mode == "glocal":
+        from .identify.intron_refine import refine_intron_trna
+        from collections import Counter as _Counter2
+        print("\n[6b-iii] intron-bearing tRNA boundaries (glocal exon vote)...")
+
+        def _inv3(anns):
+            return _Counter2((a.gene_name, a.gene_type, a.strand) for a in anns)
+
+        before3 = _inv3(annotations)
+        trnas3 = [a for a in annotations if a.gene_type == "tRNA"]
+        diag3 = []
+        n3 = refine_intron_trna(trnas3, genome_seq, EXON_DB,
+                                genome_len, diagnostics=diag3)
+        for d in diag3:
+            print(f"      [intron] {d}")
+        after3 = _inv3(annotations)
+        if before3 != after3:
+            raise RuntimeError(
+                "intron tRNA refinement changed the annotation inventory; this "
+                "must be impossible. gained=%r lost=%r"
+                % (dict(after3 - before3), dict(before3 - after3)))
+        print(f"      boundaries re-placed: {n3} (inventory unchanged: "
+              f"{sum(before3.values())} features)")
+
+    # ── Step 6c: Finalise annotation content ──────────────────────────────────
+    # Every check that can change a feature runs here, once, BEFORE the counts below
+    # are printed and before any file is written. It used to sit inside the writer,
+    # so the summary described a different state from the files on disk.
+    from .core.finalize import finalize_qc
+    finalize_qc(annotations, genome_seq)
+
+    high   = sum(1 for a in annotations if a.flag == "HIGH")
+    medium = sum(1 for a in annotations if a.flag == "MEDIUM")
+    review = sum(1 for a in annotations if a.flag == "NEEDS_REVIEW")
+
     # ── Step 7: Output ────────────────────────────────────────────────────────
     print("\n[7/7] Writing output files...")
     from .output.writers import write_all
@@ -209,6 +331,23 @@ def run(
     for f in files:
         print(f"      ✅ {f}")
 
+    # The run has not succeeded until the files have. Every required output must
+    # exist, carry content and parse in its own format; anything else raises, and
+    # the caller turns that into a non-zero exit code. Reporting success while a
+    # writer had silently been removed is how a whole batch was once recorded as
+    # annotated with no GenBank file on disk.
+    from .output.verify import verify_outputs
+    from .output.writers import _sanitize_id
+    verify_outputs(out_dir, _sanitize_id(prefix))
+
+    # Provenance sidecar. A new file, so no existing output is altered: the
+    # reconciliation MODE is an algorithm fact and does not belong in
+    # annotation_schema, which describes the output FORMAT. Both modes currently
+    # emit the same field structure, so both are schema 1.
+    _write_provenance(out_dir, prefix, mode, genome_len, len(annotations),
+                      input_fasta, trna_mode=trna_mode,
+                      exon_mode=exon_mode, intron_mode=intron_mode)
+
     elapsed = time.time() - t_start
     n_genes = len(annotations)
 
@@ -223,3 +362,63 @@ def run(
         "relatives"   : relatives,
         "elapsed"     : elapsed,
     }
+
+
+def _write_provenance(out_dir, prefix, mode, genome_len, n_genes, input_fasta,
+                      trna_mode="hybrid", exon_mode="aragorn",
+                      intron_mode="glocal"):
+    """Record what produced this annotation, beside it.
+
+    Kept out of the GenBank and GFF3 files on purpose: adding a line to those
+    would change legacy output that the frozen benchmark record depends on.
+    """
+    import hashlib, json as _json, os, subprocess, sys
+    from pathlib import Path as _P
+
+    def _sha(path):
+        try:
+            h = hashlib.sha256()
+            with open(path, "rb") as fh:
+                for c in iter(lambda: fh.read(1 << 20), b""):
+                    h.update(c)
+            return h.hexdigest()
+        except OSError:
+            return None
+
+    try:
+        commit = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True,
+                                text=True, cwd=str(_P(__file__).resolve().parent),
+                                timeout=10).stdout.strip() or None
+    except Exception:
+        commit = None
+    from .core import trna_policy as _tp
+    prov = {
+        # annotation_schema describes the output FORMAT. This change alters no
+        # field structure -- only which VALUES the identity logic produces -- so
+        # the schema stays 1 and the policy is versioned separately.
+        "annotation_schema": 1,
+        "trna_identity_policy_version": _tp.POLICY_VERSION,
+        "reconciliation_mode": mode,
+        "trna_mode": trna_mode,
+        "exon_mode": exon_mode,
+        "intron_mode": intron_mode,
+        "plastanno_commit": commit,
+        "database_root": str(BASE_DIR),
+        "input_fasta": str(input_fasta),
+        "input_sha256": _sha(input_fasta),
+        "genome_length": genome_len,
+        "genes_annotated": n_genes,
+        "command": " ".join(sys.argv),
+    }
+    try:
+        _P(out_dir, "%s.provenance.json" % prefix).write_text(
+            _json.dumps(prov, indent=2))
+    except OSError as exc:
+        # Losing the provenance sidecar in silence is the worst of the silent
+        # failures in this codebase: every gated comparison in benchmark_v3/ is
+        # anchored on the commit, database root and input hash recorded here, and
+        # a run without it cannot be placed. The annotation itself is unaffected,
+        # so this warns rather than aborting.
+        print("      WARNING: could not write %s.provenance.json (%s). The "
+              "annotation is complete but this run is NOT reproducible from its "
+              "own output." % (prefix, exc))

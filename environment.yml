@@ -8,8 +8,8 @@
 # `channels:` lists conda-forge before bioconda (the order Bioconda requires, so
 # conda-forge keeps the higher priority) and ends with `nodefaults` so the
 # Anaconda `defaults` channel is never pulled (avoids the Terms-of-Service prompt
-# on recent conda). To also use the optional --trnascan source, uncomment
-# trnascan-se below.
+# on recent conda). tRNAscan-SE is required, not optional: the default
+# --trna-mode is `hybrid`.
 name: plastanno
 channels:
   - conda-forge
@@ -21,8 +21,11 @@ dependencies:
   - pandas
   - matplotlib        # circular plastome map (default output)
   - platformdirs      # cross-platform data dir for the downloaded database
+  - numpy             # cost matrix for the cross-engine assignment
+  - scipy             # scipy.optimize.linear_sum_assignment, reconcile step 5
   - blast             # makeblastdb / blastn / tblastn
   - exonerate
   - hmmer             # hmmsearch / nhmmer
   - aragorn
-  # - trnascan-se     # optional: extra tRNA source used by `--trnascan`
+  - trnascan-se       # REQUIRED: the default --trna-mode is `hybrid`, and
+                      # pipeline.run checks for the binary before step 1

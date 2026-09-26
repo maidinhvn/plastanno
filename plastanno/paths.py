@@ -7,6 +7,10 @@ Resolution order (first hit wins):
           ``~/Library/Application Support/plastanno/database`` (macOS)
   3. repo-layout fallback ``<repo>/database``   — keeps source-tree / dev runs working
 
+The user-data directory is resolved by :func:`user_data_parent`, which
+``fetch_db`` imports as well so that the place the database is written to and the
+place it is looked for cannot drift apart.
+
 Behaviour is unchanged when running from the source tree with ``$PLASTANNO_DB``
 unset and no installed data dir: it falls through to (3), the historical location.
 """
@@ -15,6 +19,25 @@ from pathlib import Path
 
 _REPO_FALLBACK = Path(__file__).resolve().parent.parent / "database"
 _PKG_DATA      = Path(__file__).resolve().parent / "data"
+
+
+def user_data_parent() -> Path:
+    """Directory whose ``database/`` subdir ``plastanno fetch-db`` populates.
+
+    Single source of truth, imported by ``fetch_db`` as well. It used to be
+    duplicated there, and the two copies drifted: without ``platformdirs``,
+    ``fetch_db`` wrote to ``~/.local/share/plastanno`` while ``db_root`` skipped
+    that location entirely and fell through to the repo layout. A user in that
+    state downloaded 267 MB and was then told the database was missing.
+    """
+    try:
+        import platformdirs
+        return Path(platformdirs.user_data_dir("plastanno"))
+    except Exception:
+        # platformdirs is a declared dependency, so this branch is for broken or
+        # --no-deps installs. It must match what fetch_db would use, or the two
+        # disagree again.
+        return Path.home() / ".local" / "share" / "plastanno"
 
 
 def config_dir() -> Path:
@@ -33,13 +56,9 @@ def db_root() -> Path:
     env = os.environ.get("PLASTANNO_DB")
     if env:
         return Path(env).expanduser()
-    try:
-        import platformdirs
-        cand = Path(platformdirs.user_data_dir("plastanno")) / "database"
-        if (cand / "blast_db").exists():
-            return cand
-    except Exception:
-        pass  # platformdirs absent or unusable -> fall back to repo layout
+    cand = user_data_parent() / "database"
+    if (cand / "blast_db").exists():
+        return cand
     return _REPO_FALLBACK
 
 

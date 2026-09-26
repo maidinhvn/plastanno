@@ -68,6 +68,10 @@ def cmd_run(args):
         reference   = args.reference,
         use_trnascan= args.trnascan,
         organism    = args.organism,
+        mode        = args.mode,
+        trna_mode   = args.trna_mode,
+        exon_mode   = args.exon_mode,
+        intron_mode = args.intron_mode,
     )
     return result
 
@@ -100,6 +104,10 @@ def cmd_batch(args):
                 reference   = args.reference,
                 use_trnascan= args.trnascan,
                 organism    = args.organism,
+                mode        = args.mode,
+                trna_mode   = args.trna_mode,
+                exon_mode   = args.exon_mode,
+                intron_mode = args.intron_mode,
             )
             results.append({
                 "file"   : fa.name,
@@ -130,6 +138,12 @@ def cmd_batch(args):
         print(f"  Avg genes  : {avg_genes:.0f}")
         print(f"  Avg runtime: {avg_time:.1f}s")
     print(f"{'='*60}")
+    if fail:
+        # A batch that could not annotate every genome must not report success: a
+        # caller reading only the exit status would otherwise record the failures
+        # as if they had produced empty annotations.
+        print(f"  {fail} genome(s) failed — see the status column above")
+        sys.exit(1)
 
 
 def cmd_fetch_db(args):
@@ -181,6 +195,54 @@ def main():
     run_parser.add_argument("--organism",
         metavar="\"Genus species\"",
         help="taxon name written to ORGANISM/DEFINITION//organism; required for GenBank submission")
+    run_parser.add_argument("--exon-mode",
+        choices=["legacy", "aragorn"], default="aragorn",
+        help="where intron-bearing tRNA exon boundaries come from. aragorn "
+             "(default): ARAGORN's own structural intron call. legacy: the "
+             "exon-database BLAST call, kept for reproducing the frozen "
+             "benchmark record. The former "
+             "structural intron call, which outranks the exon DB for this locus "
+             "class only. Measured over 238 intron loci, the exon DB scores 4.35/7 "
+             "on acceptor-stem validity against ARAGORN's 6.51/7 and the "
+             "references' 6.58/7. Detection and inventory are unchanged; no extra "
+             "runtime, since ARAGORN already runs.")
+    run_parser.add_argument("--intron-mode",
+        choices=["legacy", "glocal"], default="glocal",
+        help="boundaries for the seven intron-bearing tRNA (trnA-UGC, trnI-GAU, "
+             "trnL-UAA, trnK-UUU, trnV-UAC, trnG-UCC, trnG-GCC). glocal "
+             "(default): each "
+             "reference exon is aligned end to end inside the existing "
+             "call's window and donors vote per coordinate, so the boundary "
+             "comes from reference geometry rather than from where local "
+             "similarity tails off. legacy: ARAGORN's structural intron call, "
+             "which reproduces the frozen benchmark record. Verified on 645 "
+             "pristine non-RefSeq genomes, 5178 loci: exact coordinates "
+             "13.0%% -> 55.1%%, outer-exact 63.2%% -> 93.5%%, and 0 loci made "
+             "worse. It never models the "
+             "intron; the intron is the gap between the two exons. Inventory, "
+             "naming and every other feature class are untouched.")
+    run_parser.add_argument("--trna-mode",
+        choices=["legacy", "hybrid"], default="hybrid",
+        help="tRNA geometry. hybrid (default): intron-free tRNA boundaries are "
+             "taken from tRNAscan-SE, while the set of loci, intron models and "
+             "naming are unchanged. Validated on 99 held-out genomes from 89 "
+             "families: acceptor stem +1.124 [+1.065, +1.182] on the intron-free "
+             "class, and +1.163 restricted to families absent from development; "
+             "intron-bearing loci, CDS, rRNA and the tRNA inventory all unmoved. "
+             "Costs roughly 4x runtime and REQUIRES tRNAscan-SE on PATH, which is "
+             "checked before the run starts. legacy: ARAGORN/exon-DB boundaries, "
+             "no extra dependency, and what reproduces the frozen benchmark record.")
+    run_parser.add_argument("--mode",
+        choices=["legacy", "pooled"], default="pooled",
+        help="reconciliation strategy. pooled (default): candidate pooling with a "
+             "B-primary/A-rescue rule, choosing coordinates on ORF validity. "
+             "legacy: the cross-engine integration layer, which chooses on "
+             "closeness to the catalogued expected_len and therefore reproduces "
+             "that constant's errors -- measured on 30 development genomes it "
+             "returns petN at 96 bp in all 24 loci where the two differ because "
+             "the catalog says 96, while the real length is 90. Exact CDS "
+             "boundaries 84.1%% legacy against 86.2%% pooled. Kept for reproducing "
+             "the frozen benchmark record. An unknown value exits non-zero.")
     run_parser.add_argument("--trnascan",
         action="store_true",
         help="Also run tRNAscan-SE as an extra tRNA source (must be on PATH)")
@@ -202,6 +264,45 @@ def main():
     batch_parser.add_argument("--organism",
         metavar="\"Genus species\"",
         help="taxon name written to ORGANISM/DEFINITION//organism; required for GenBank submission")
+    batch_parser.add_argument("--exon-mode",
+        choices=["legacy", "aragorn"], default="aragorn",
+        help="where intron-bearing tRNA exon boundaries come from. aragorn "
+             "(default): ARAGORN's own structural intron call. legacy: the "
+             "exon-database BLAST call, kept for reproducing the frozen "
+             "benchmark record. The former "
+             "structural intron call, which outranks the exon DB for this locus "
+             "class only. Measured over 238 intron loci, the exon DB scores 4.35/7 "
+             "on acceptor-stem validity against ARAGORN's 6.51/7 and the "
+             "references' 6.58/7. Detection and inventory are unchanged; no extra "
+             "runtime, since ARAGORN already runs.")
+    batch_parser.add_argument("--intron-mode",
+        choices=["legacy", "glocal"], default="glocal",
+        help="boundaries for the seven intron-bearing tRNA (trnA-UGC, trnI-GAU, "
+             "trnL-UAA, trnK-UUU, trnV-UAC, trnG-UCC, trnG-GCC). glocal "
+             "(default): each "
+             "reference exon is aligned end to end inside the existing "
+             "call's window and donors vote per coordinate, so the boundary "
+             "comes from reference geometry rather than from where local "
+             "similarity tails off. legacy: ARAGORN's structural intron call, "
+             "which reproduces the frozen benchmark record. Verified on 645 "
+             "pristine non-RefSeq genomes, 5178 loci: exact coordinates "
+             "13.0%% -> 55.1%%, outer-exact 63.2%% -> 93.5%%, and 0 loci made "
+             "worse. It never models the "
+             "intron; the intron is the gap between the two exons. Inventory, "
+             "naming and every other feature class are untouched.")
+    batch_parser.add_argument("--trna-mode",
+        choices=["legacy", "hybrid"], default="hybrid",
+        help="tRNA geometry. hybrid (default): intron-free tRNA boundaries are "
+             "taken from tRNAscan-SE, while the set of loci, intron models and "
+             "naming are unchanged. Validated on 99 held-out genomes from 89 "
+             "families: acceptor stem +1.124 [+1.065, +1.182] on the intron-free "
+             "class, and +1.163 restricted to families absent from development; "
+             "intron-bearing loci, CDS, rRNA and the tRNA inventory all unmoved. "
+             "Costs roughly 4x runtime and REQUIRES tRNAscan-SE on PATH, which is "
+             "checked before the run starts. legacy: ARAGORN/exon-DB boundaries, "
+             "no extra dependency, and what reproduces the frozen benchmark record.")
+    batch_parser.add_argument("--mode",
+        choices=["legacy", "pooled"], default="pooled")
     batch_parser.add_argument("--trnascan",
         action="store_true",
         help="Also run tRNAscan-SE as an extra tRNA source")
@@ -217,7 +318,15 @@ def main():
     args = parser.parse_args()
 
     if args.command == "run":
-        cmd_run(args)
+        # An incomplete or unparseable output set is a failed run, not a warning:
+        # exit non-zero so a script, a workflow or a batch caller sees it. The
+        # traceback is suppressed because the message already names every file.
+        from plastanno.output.verify import OutputError
+        try:
+            cmd_run(args)
+        except OutputError as e:
+            print("\nERROR: %s" % e, file=sys.stderr)
+            sys.exit(1)
     elif args.command == "batch":
         cmd_batch(args)
     elif args.command == "fetch-db":

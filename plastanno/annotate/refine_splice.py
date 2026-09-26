@@ -18,6 +18,7 @@ MIN_INTRON = 100
 PAD        = 75
 JW         = 15      # junction search window (bp)
 from ..paths import config_dir
+from ..core import coords as _coords
 _HERE = os.path.dirname(__file__)
 _BDB  = str(config_dir() / "boundary_db" / "exons")
 _META = None
@@ -123,35 +124,84 @@ def _constrained(C, cex):
     return best[1] if best else None
 
 def _refine_one(feat, g):
-    ex = sorted(feat.exons)
-    if len(ex) < 2: return False
-    ex = _merge_short(ex)
-    changed = (ex != sorted(feat.exons))
+    """Refine the exon junctions of one multi-exon CDS.
+
+    Everything happens in WINDOW coordinates: a window that follows the gene round
+    the origin, in which the gene is contiguous and has exactly the number of exons
+    it biologically has. That matters for more than the sequence slice. An earlier
+    version worked on the genomic exon list, where an origin cutting THROUGH an
+    exon splits it into two arcs — so `n_exons == len(exons)` failed, the
+    refinement was skipped, and a wrapped gene took a different path from the same
+    gene presented differently. Its exon-length distance to the template was wrong
+    for the same reason: two arcs of one exon have the wrong lengths.
+
+    Note the failure was conditional, not universal: a gene whose origin falls in
+    an intron, or outside it, keeps its arc count and was refined normally. Only
+    the cut-through-an-exon case diverged.
+    """
+    glen = len(g)
+    if not feat.exons:
+        return False
+    win = _coords.open_window(g, feat.start, feat.end, glen, buffer=PAD)
+    wlen = len(win.seq)
+
+    # the exons, in window coordinates, with any arc split by the origin rejoined
+    loc = []
+    for s0, e0, _st in _coords.transcript_parts(feat, glen):
+        ls = (s0 - win.start) % glen
+        loc.append((ls, ls + (e0 - s0)))
+    loc.sort()
+    ex = []
+    for iv in loc:
+        if ex and iv[0] <= ex[-1][1]:
+            ex[-1] = (ex[-1][0], max(ex[-1][1], iv[1]))
+        else:
+            ex.append(iv)
+    if len(ex) < 2:
+        return False
+    merged = _merge_short(ex)
+    changed = (merged != ex)
+    ex = merged
+
+    def to_genome(local_exons):
+        arcs = []
+        for a, b in local_exons:
+            arcs.extend(win.arcs(a, b))
+        return sorted(arcs)
+
+    def write_back(local_exons):
+        arcs = to_genome(local_exons)
+        lo = min(a for a, _ in local_exons)
+        hi = max(b for _, b in local_exons)
+        feat.exons = arcs
+        feat.start = win.to_genomic(lo)
+        feat.end = win.interval(lo, hi)[1]
+        feat.has_intron = len(local_exons) > 1
 
     M = _meta().get(feat.gene_name)
     if M and M.get("n_exons") == len(ex):
         strand = feat.strand
-        r0 = max(0, ex[0][0] - PAD); r1 = min(len(g), ex[-1][1] + PAD)
-        C = _rc(g[r0:r1]) if strand == -1 else g[r0:r1]
+        C = _rc(win.seq) if strand == -1 else win.seq
         hsp = _blast_exons(C, feat.gene_name)
         if len(hsp) == len(ex):
             cex = sorted(hsp[i] for i in sorted(hsp))
             ce = _constrained(C, cex)
             if ce:
                 if strand == -1:
-                    gex = sorted((r0 + (len(C) - e), r0 + (len(C) - s)) for s, e in ce)
+                    gex = sorted((wlen - e, wlen - s) for s, e in ce)
                 else:
-                    gex = sorted((r0 + s, r0 + e) for s, e in ce)
+                    gex = sorted((s, e) for s, e in ce)
                 L = _tpl(feat.gene_name)
                 closer = (L is None) or (_dist(gex, L) < _dist(ex, L))
                 if gex != ex and closer and all(e > s for s, e in gex) and \
-                   all(gex[i+1][0] > gex[i][1] for i in range(len(gex)-1)):
-                    feat.exons = gex; feat.start = gex[0][0]; feat.end = gex[-1][1]
-                    feat.has_intron = len(gex) > 1
+                   all(gex[i+1][0] > gex[i][1] for i in range(len(gex)-1)) and \
+                   all(0 <= s and e <= wlen for s, e in gex):
+                    write_back(gex)
                     return True
     if changed:
-        feat.exons = ex; feat.start = ex[0][0]; feat.end = ex[-1][1]; feat.has_intron = len(ex) > 1
+        write_back(ex)
     return changed
+
 
 _STOP = {"TAA", "TAG", "TGA"}
 _SNAP_MAX_CODONS = 3          # only look ≤ 9 bp downstream (RNA-editing-safe)
@@ -167,37 +217,64 @@ def _snap_terminal_stop(feat, g, gene_catalog):
     (genomic read-through, e.g. some ndh/rpl2) are NOT force-extended to a distant
     downstream stop — if no genomic stop sits right at the terminus we leave it.
     """
-    exons = sorted(feat.exons) if feat.exons else [(feat.start, feat.end)]
-    seq = "".join(g[s:e] for s, e in exons)
-    if feat.strand == -1:
-        seq = _rc(seq)
+    glen = len(g)
+    # The coding sequence in TRANSCRIPTION order. Concatenating sorted(exons) puts
+    # a wrapped gene's parts the wrong way round — the piece after the origin first
+    # — so the frame, and therefore the terminal codon, were read from the wrong
+    # place.
+    seq = _coords.extract(g, feat, glen)
     if len(seq) < 6 or len(seq) % 3 != 0:      # need an intact frame to snap
         return False
     if seq[-3:].upper() in _STOP:               # already terminated
         return False
 
+    cur_len = _coords.spliced_length(feat, glen)
     exp = (gene_catalog.get(feat.gene_name, {}) or {}).get("expected_len", 0)
-    for k in range(_SNAP_MAX_CODONS):
-        if feat.strand == 1:
-            p = exons[-1][1] + 3 * k
-            if p + 3 > len(g): break
-            codon = g[p:p + 3].upper()
+    # The exons in transcription order; the LAST one carries the 3' end, wherever
+    # that sits on the circle.
+    parts = _coords.transcript_parts(feat, glen)
+    if not parts:
+        return False
+    s0, e0, st0 = parts[-1]
+
+    def codon_at(k):
+        """The k-th codon downstream of the 3' end, read round the origin."""
+        if st0 == 1:
+            a = (e0 + 3 * k) % glen
+            piece = g[a:a + 3] if a + 3 <= glen else g[a:] + g[:a + 3 - glen]
         else:
-            p = exons[0][0] - 3 * k
-            if p - 3 < 0: break
-            codon = _rc(g[p - 3:p]).upper()
-        if codon in _STOP:
-            newlen = sum(e - s for s, e in exons) + 3 * (k + 1)
-            if exp and newlen / exp > 1.2:      # never overshoot the gene
-                return False
-            if feat.strand == 1:
-                exons[-1] = (exons[-1][0], exons[-1][1] + 3 * (k + 1))
-            else:
-                exons[0] = (exons[0][0] - 3 * (k + 1), exons[0][1])
-            feat.exons = exons
-            feat.start = exons[0][0]; feat.end = exons[-1][1]
-            return True
+            b = (s0 - 3 * k) % glen
+            a = (b - 3) % glen
+            piece = g[a:b] if a < b else g[a:] + g[:b]
+            piece = _rc(piece)
+        return piece.upper()
+
+    for k in range(_SNAP_MAX_CODONS):
+        codon = codon_at(k)
+        if len(codon) != 3:
+            break
+        if codon not in _STOP:
+            continue
+        grow = 3 * (k + 1)
+        if exp and (cur_len + grow) / exp > 1.2:      # never overshoot the gene
+            return False
+        # Extend the terminal exon along the circle; it may now cross the origin
+        # and become two arcs.
+        if st0 == 1:
+            ns, ne = s0, e0 + grow
+        else:
+            ns, ne = s0 - grow, e0
+        arcs = _coords.region_arcs(ns % glen, (ne % glen) or glen, glen) \
+            if (ns < 0 or ne > glen) else [(ns, ne)]
+        exons = sorted([(a, b) for a, b, _ in parts[:-1]] + arcs)
+        feat.exons = exons
+        if st0 == 1:
+            feat.end = (e0 + grow) % glen or glen
+        else:
+            feat.start = (s0 - grow) % glen
+        return True
     return False
+
 
 def refine_all(annotations, genome_seq, gene_catalog=None):
     gene_catalog = gene_catalog or {}
@@ -208,7 +285,12 @@ def refine_all(annotations, genome_seq, gene_catalog=None):
         if not getattr(f, "exons", None) or len(f.exons) < 2: continue
         try:
             if _refine_one(f, genome_seq): n += 1
-        except Exception: pass
+        except Exception as exc:                      # noqa: BLE001
+            # One malformed feature must not abort the whole refinement pass, but
+            # a bug in _refine_one was previously invisible: every gene it threw
+            # on was simply left unrefined with no trace.
+            print("      WARNING: splice refinement failed for %s (%s: %s)"
+                  % (getattr(f, "gene_name", "?"), type(exc).__name__, exc))
     # Terminal-stop snap — all CDS (single- and multi-exon), skip pseudogenes and
     # trans-spliced features. Runs after junction refinement so it snaps the final
     # exon end.
@@ -218,5 +300,7 @@ def refine_all(annotations, genome_seq, gene_catalog=None):
         if getattr(f, "is_pseudogene", False): continue
         try:
             _snap_terminal_stop(f, genome_seq, gene_catalog)
-        except Exception: pass
+        except Exception as exc:                      # noqa: BLE001
+            print("      WARNING: terminal-stop snap failed for %s (%s: %s)"
+                  % (getattr(f, "gene_name", "?"), type(exc).__name__, exc))
     return n

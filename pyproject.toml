@@ -22,6 +22,13 @@ dependencies = [
     "pandas",
     "matplotlib",
     "platformdirs",
+    # core.reconcile.match_features pairs the two engines' calls with a
+    # maximum-weight assignment (scipy.optimize.linear_sum_assignment, over a
+    # numpy cost matrix). It runs on essentially every genome, so these are hard
+    # runtime requirements, not optional extras — an install without them raised
+    # ImportError in step 5 of the pipeline.
+    "numpy",
+    "scipy",
 ]
 # The external binaries (BLAST+, Exonerate, HMMER, ARAGORN) are NOT pip deps —
 # conda/bioconda provides them as run requirements (see packaging/meta.yaml).

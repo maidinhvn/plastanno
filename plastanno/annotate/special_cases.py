@@ -12,11 +12,15 @@ import difflib
 import os
 import re
 import subprocess
+import hashlib
 import tempfile
 from pathlib import Path
 from typing import List, Tuple, Dict
 from Bio.Seq import Seq
 from ..core.feature import Feature
+from ..core import trna_identity as _TI
+from ..core import coords as _coords
+from ..core import ambiguity as _ambiguity
 
 
 # ── Gene synonyms ─────────────────────────────────────────────────────────────
@@ -58,9 +62,7 @@ def _blast_cau_names(cau_feats, genome_seq, db_prefix):
             suffix=".fasta", mode="w", delete=False
         ) as f:
             for i, ann in enumerate(cau_feats):
-                sub = genome_seq[ann.start:ann.end]
-                if ann.strand == -1:
-                    sub = str(Seq(sub).reverse_complement())
+                sub = _coords.extract(genome_seq, ann, len(genome_seq) or None)
                 f.write(f">{i}\n{sub}\n")
             qfa = f.name
         result = subprocess.run([
@@ -111,16 +113,26 @@ def normalize_names(annotations, ir_boundaries,
 
     for i, ann in enumerate(cau_feats):
         name = blast_names.get(i)
+        source = _TI.BLAST_TRNA_DB if name is not None else _TI.POSITIONAL_IR
         if name is None:
             # Fallback: positional (IR → trnI, else → trnM); cannot tell trnfM.
-            irb = ir_boundaries.get("IRb", (0, 0))
-            ira = ir_boundaries.get("IRa", (0, 0))
-            mid = (ann.start + ann.end) // 2
-            in_ir = (irb[0] <= mid <= irb[1] or ira[0] <= mid <= ira[1])
+            _glen = len(genome_seq or "") or None
+            mid = _coords.circular_midpoint(ann, _glen)
+            in_ir = any(_coords.region_contains(ir_boundaries[k], mid, _glen)
+                        for k in ("IRb", "IRa") if ir_boundaries.get(k))
             name = "trnI-CAU" if in_ir else "trnM-CAU"
-        if ann.gene_name != name:
-            changes.append(f"CAU: {ann.gene_name} → {name} @{ann.start}")
-            ann.gene_name = name
+        # Same single identity API. The positional fallback is NOT authoritative
+        # on identity -- it cannot distinguish trnfM from trnM -- so a
+        # disagreement there yields CONFLICT rather than a forced rename.
+        canon, note = _TI.resolve(_TI.from_gene_name(ann.gene_name),
+                                  _TI.from_gene_name(name), source,
+                                  detector_symbol=ann.gene_name)
+        if (_TI.gene_name(canon) != ann.gene_name
+                or _TI.product(canon) != ann.product):
+            changes.append("CAU: %s → %s @%d (%s)"
+                           % (ann.gene_name, _TI.gene_name(canon), ann.start,
+                              source))
+            _TI.apply_trna_identity(ann, canon, note)
 
     return annotations, changes
 
@@ -133,8 +145,15 @@ def _rc(s):
     return str(Seq(s).reverse_complement())
 
 
-def _coding_of(genome, s, e, strand):
-    return _rc(genome[s:e]) if strand == -1 else genome[s:e]
+def _coding_of(genome, s, e, strand, genome_len=None):
+    """The coding sequence of [s, e) read FORWARD around the circle.
+
+    genome[s:e] is empty when the interval crosses the origin, which silently
+    turned rps12's 5' exon into an empty protein and aborted the reconstruction.
+    """
+    L = genome_len or len(genome)
+    seq = genome[s:e] if s < e else genome[s:L] + genome[0:e]
+    return _rc(seq) if strand == -1 else seq
 
 
 def _reconstruct_rps12_copy(genome, exon1, ir_strand, exon2_start_g, refs):
@@ -149,7 +168,7 @@ def _reconstruct_rps12_copy(genome, exon1, ir_strand, exon2_start_g, refs):
     frame. Returns (identity, exon2_genomic, exon3_genomic) or None.
     """
     e1s, e1e, e1st = exon1
-    e1c = _coding_of(genome, e1s, e1e, e1st)
+    e1c = _coding_of(genome, e1s, e1e, e1st, len(genome))
     # rps12's 5' exon may begin at an alternative start codon (GTG) in some
     # lineages; treat it as Met rather than rejecting the reconstruction.
     rps12_starts = _valid_starts("rps12")
@@ -157,16 +176,22 @@ def _reconstruct_rps12_copy(genome, exon1, ir_strand, exon2_start_g, refs):
     if not e1prot or e1prot[0] != "M":
         return None
     glen = len(genome)
+    # The search window is taken around the circle. Clamping it at the ends of the
+    # sequence made the window short, or empty, whenever the origin fell inside the
+    # inverted repeat — and the origin is inside IRb for any genome deposited with
+    # a different rotation, which is not rare.
     if ir_strand == 1:
-        w0, w1 = max(0, exon2_start_g - 12), min(glen, exon2_start_g + 1600)
-        view = genome[w0:w1]
-        tomap = lambda ci, cj: (w0 + ci, w0 + cj)
-        a0 = exon2_start_g - w0
+        win = _coords.open_window(genome, (exon2_start_g - 12) % glen,
+                                  (exon2_start_g + 1600) % glen, glen)
+        view = win.seq
+        tomap = lambda ci, cj: win.interval(ci, cj)
     else:
-        w0, w1 = max(0, exon2_start_g - 1600), min(glen, exon2_start_g + 12)
-        view = _rc(genome[w0:w1])
-        tomap = lambda ci, cj: (w1 - cj, w1 - ci)
-        a0 = w1 - exon2_start_g
+        win = _coords.open_window(genome, (exon2_start_g - 1600) % glen,
+                                  (exon2_start_g + 12) % glen, glen)
+        view = _rc(win.seq)
+        _wl = len(win.seq)
+        tomap = lambda ci, cj: win.interval(_wl - cj, _wl - ci)
+    a0 = 12                       # the anchor sits 12 bases into the window
 
     n1 = len(e1prot)
     cand_refs = sorted(
@@ -234,14 +259,49 @@ def handle_rps12(annotations, genome_seq, ir_boundaries, protein_db=None):
         return annotations, []
     rep = max(refs, key=len)
 
-    lsc_end = ir_boundaries.get("LSC", (0, 0))[1]
-    e1_feats = [f for f in rps12 if f.end <= lsc_end]
+    # Membership in the LSC, read forward around the circle. The test used to be
+    # `f.end <= LSC_end`, which is right only when the LSC does not cross the
+    # origin. In a genome deposited with a different origin the LSC is recorded as
+    # start > end, every exon fails `end <= LSC_end`, and the branch below then
+    # deletes rps12 outright — both copies, in every such genome.
+    glen = len(genome_seq) or None
+    lsc = ir_boundaries.get("LSC")
+    if lsc:
+        e1_feats = [f for f in rps12 if _coords.feature_in_region(f, lsc, glen)]
+    else:
+        e1_feats = list(rps12)
     if not e1_feats:
         # No 5' exon in the LSC (IR-lacking or IR-boundary mis-call): reconstruction
         # is impossible, and the raw fragments are disconnected single-exon pieces
         # that never match a trans-spliced reference — pure false positives.
         return other, ["rps12: no LSC exon1; dropped %d raw fragment(s)" % len(rps12)]
-    exon1_f = min(e1_feats, key=lambda f: f.start)
+
+    # Among those, prefer a fragment that actually looks like exon1: its own
+    # translation starts with Met.
+    #
+    # Position alone is not enough. When ir_detector finds no inverted repeat the
+    # pipeline sets ir_boundaries = {"LSC": (0, genome_len)}, so EVERY fragment is
+    # "in the LSC" and the tiebreak below degenerates to lowest coordinate. On
+    # NC_037507.1 that chose the fragment at 92..851, which translates to TTTPKKPN
+    # and is the 3' half of the gene, over the real exon1 at 66686..66800
+    # (MPTIQQLI). _reconstruct_rps12_copy then failed its own Met check and both
+    # fragments were discarded. Four of the 30 development genomes failed this way
+    # and all four have no detected IR — conifers and several bryophytes have
+    # genuinely lost one repeat.
+    #
+    # If nothing qualifies the list is left alone, so a genome whose exon1
+    # Exonerate truncated is no worse off than before.
+    _starts = _valid_starts("rps12")
+    _met = [f for f in e1_feats
+            if (_translate_orf(_coding_of(genome_seq, f.start, f.end, f.strand,
+                                          len(genome_seq)), _starts).rstrip("*") or " ")[0] == "M"]
+    if _met:
+        e1_feats = _met
+    # "first" means closest to the start of the LSC around the circle, not the
+    # lowest coordinate: with a wrapping LSC the lowest coordinate is the far end.
+    _lsc_s = lsc[0] if lsc else 0
+    exon1_f = min(e1_feats,
+                  key=lambda f: (f.start - _lsc_s) % (glen or (max(f.end, 1))))
     exon1 = (exon1_f.start, exon1_f.end, exon1_f.strand)
     # rps12 exon1 is canonically 38 codons = 114 nt with a phase-0 trans-splice
     # boundary (cut after Tyr-38). Exonerate frequently over-extends the donor
@@ -256,27 +316,68 @@ def handle_rps12(annotations, genome_seq, ir_boundaries, protein_db=None):
 
     from ..identify.engine_a import run_exonerate_region
     built = []
-    for region in ("IRb", "IRa"):
-        coords = ir_boundaries.get(region)
-        if not coords:
-            continue
+    # Where to look for the 3' exons. Normally one search per IR copy.
+    #
+    # A plastome with no inverted repeat has neither IRb nor IRa, so this loop
+    # used to skip every iteration, `built` stayed empty, and the function
+    # reported "reconstruction failed" without ever having attempted one. Four of
+    # the 30 development genomes failed exactly this way, all of them IR-lacking:
+    # conifers and several bryophytes have genuinely lost one repeat. In such a
+    # genome the 3' exons are not duplicated, so one search over the whole
+    # sequence is both correct and sufficient.
+    _regions = [(r, ir_boundaries[r]) for r in ("IRb", "IRa") if ir_boundaries.get(r)]
+    if not _regions:
+        _regions = [("whole", (0, glen or len(genome_seq)))]
+    for region, coords in _regions:
         hits = run_exonerate_region(genome_seq, rep, "rps12", "rps12_ref",
-                                    coords[0], coords[1])
+                                    coords[0], coords[1], genome_len=glen)
+        # The anchor must be the 3' block, never exon1 itself. Searching a whole
+        # IR-lacking genome returns both, and on NC_039155.1 exon1 scored higher
+        # (0.895 against 0.880), so the resolver below chose it and the
+        # reconstruction could not succeed. In the IR case exon1 lies in the LSC
+        # and no IR hit overlaps it, so this filter is a no-op there.
+        _e1s, _e1e = exon1[0], exon1[1]
+        hits = [h for h in hits if not (h.start < _e1e and h.end > _e1s)]
         if not hits:
             continue
-        hit = max(hits, key=lambda h: h.s_ref)
+        # The shared ambiguity policy: rank on alignment identity alone, collapse
+        # hits describing the same span, and if several still rank equally take a
+        # stable representative rather than whichever Exonerate emitted first.
+        import hashlib as _hl
+        hit, _hit_alts, _hit_amb, _hit_ord = _ambiguity.resolve(
+            hits,
+            evidence=lambda h: h.s_ref,
+            digest=lambda h: _hl.sha256(
+                _coords.extract(genome_seq, h, glen).encode()).hexdigest(),
+            model=lambda h: (h.start, h.end, h.strand))
         anchor = hit.start if hit.strand == 1 else hit.end
         res = _reconstruct_rps12_copy(genome_seq, exon1, hit.strand, anchor, refs)
         if not res:
             continue
         idn, e2, e3 = res
+        # Any of the three exons may cross the origin, in which case it occupies
+        # two arcs; each arc is listed separately, in transcription order, carrying
+        # the strand of the exon it came from. A wrapped exon written as a single
+        # (start, end) pair with start > end would be measured as empty by
+        # everything downstream.
+        parts, pstr = [], []
+        for (ps, pe), pst in (((exon1[0], exon1[1]), exon1[2]),
+                              (e2, hit.strand), (e3, hit.strand)):
+            arcs = _coords.region_arcs(ps, pe, glen)
+            # An exon split by the origin is transcribed tail-first on the plus
+            # strand and head-first on the minus, exactly as core.coords orders a
+            # wrapped feature's parts.
+            if len(arcs) > 1 and pst != -1:
+                arcs = arcs[::-1]
+            parts.extend(arcs)
+            pstr.extend([pst] * len(arcs))
         feat = Feature(
             gene_name="rps12", gene_type="CDS",
             product="ribosomal protein S12",
-            exons=[(exon1[0], exon1[1]), e2, e3],          # transcript order
-            exon_strands=[exon1[2], hit.strand, hit.strand],
-            start=min(exon1[0], e2[0], e3[0]),
-            end=max(exon1[1], e2[1], e3[1]),
+            exons=parts,                                   # transcript order
+            exon_strands=pstr,
+            start=min(a for a, _ in parts),
+            end=max(b for _, b in parts),
             strand=exon1[2], engine="AB",
             confidence=0.9, flag="HIGH",
             notes=["trans-spliced gene (%s copy, id=%.2f)" % (region, idn)],
@@ -700,25 +801,36 @@ def _complete_orf(feat, genome_seq, profile, median_len, refs):
     if feat.exons and len(feat.exons) > 1:
         return False
     s, e, strand = feat.start, feat.end, feat.strand
-    if (e - s) % 3 != 0:
+    glen = len(genome_seq)
+    # Length around the circle, not e - s: a CDS that crosses the origin has
+    # start > end, and the subtraction is a large negative number whose remainder
+    # says nothing about the reading frame.
+    span = _coords.region_length(s, e, glen)
+    if span == 0 or span % 3 != 0:
         return False
     valid_starts = _valid_starts(feat.gene_name)
-    glen = len(genome_seq)
     # Search window. The fixed pad covers most genes, but a long gene whose
     # Exonerate hit is only a short conserved core needs a window wide enough to
     # still reach the real stop codon — ycf1 typically comes back as ~800 bp of a
     # ~5 kb ORF, and with the fixed 3.5 kb pad the stop lies outside the view, so
     # completion silently fails. Scale the pad to the gene's own coding length.
     pad = max(_ORF_PAD, int(median_len * 3 * 1.8))
-    w0, w1 = max(0, s - pad), min(glen, e + pad)
+    # The window is taken around the circle. It used to be genome_seq[max(0, s-pad):
+    # min(glen, e+pad)], which is EMPTY for a CDS crossing the origin — completion
+    # then silently failed and the gene was left without its terminal stop codon
+    # (accD, 3 bp short, in every genome deposited with an origin inside it).
+    win = _coords.open_window(genome_seq, s, e, glen, buffer=pad)
+    wlen = len(win.seq)
+    cs_w = (s - win.start) % glen                  # the CDS, in window coordinates
+    ce_w = cs_w + span
     if strand == 1:
-        view = genome_seq[w0:w1]
-        tomap = lambda a, b: (w0 + a, w0 + b)
-        cs, ce = s - w0, e - w0
+        view = win.seq
+        tomap = lambda a, b: win.interval(a, b)
+        cs, ce = cs_w, ce_w
     else:
-        view = _rc(genome_seq[w0:w1])
-        tomap = lambda a, b: (w1 - b, w1 - a)
-        cs, ce = w1 - e, w1 - s
+        view = _rc(win.seq)
+        tomap = lambda a, b: win.interval(wlen - b, wlen - a)
+        cs, ce = wlen - ce_w, wlen - cs_w
     vlen = len(view)
 
     # 3' end: first in-frame stop at/after the current start frame
@@ -768,10 +880,19 @@ def _complete_orf(feat, genome_seq, profile, median_len, refs):
             best_c = fp_best[1]
         else:                                     # nearest-ATG fallback
             near = [a for a in atgs if abs(a[0] - cs) <= _NEAR_ATG]
-            best_c = min(near, key=lambda a: abs(a[0] - cs))[0] if near else cs
+            # two ATGs equidistant from the alignment edge, one upstream and one
+            # downstream, tie here; prefer the upstream one rather than whichever
+            # the list happened to hold first
+            best_c = min(near, key=lambda a: (abs(a[0] - cs), a[0]))[0] if near else cs
 
     if (best_c, ce2) == (cs, ce):
         return False                              # already complete — no change
+    # The nearest-ATG fallback above can return `cs`, the alignment edge, when no
+    # start codon was found nearby. Completing an ORF onto a codon that cannot
+    # initiate translation produces a gene model that is wrong at its 5' end, which
+    # happened for 4.2% of completed CDS. Refuse instead.
+    if view[best_c:best_c + 3].upper() not in valid_starts:
+        return False
     core = _translate_orf(view[best_c:ce2], valid_starts)
     core = core[:-1] if core.endswith("*") else core
     if "*" in core:                               # would contain an internal stop
@@ -780,7 +901,9 @@ def _complete_orf(feat, genome_seq, profile, median_len, refs):
         return False
     ns, ne = tomap(best_c, ce2)
     feat.start, feat.end = ns, ne
-    feat.exons = [(ns, ne)]                        # single-exon ORF — keep exons in sync
+    # One exon on the circle is one or two ascending arcs; a completed ORF that now
+    # crosses the origin must record both, or every later step measures it as empty.
+    feat.exons = _coords.region_arcs(ns, ne, glen)
     feat.notes.append("ORF boundary completed")
     return True
 
@@ -862,6 +985,11 @@ def rescue_frame_broken_cds(annotations, genome_seq, gene_catalog, protein_db=No
         if sum(e - s for s, e in exons) % 3 == 0:
             continue                              # frame intact — leave alone
         gene = feat.gene_name
+        # This rescue rewrites the feature as ONE continuous ORF, which would destroy
+        # a genuine splice structure. Only single-exon genes are eligible; a
+        # multi-exon gene with a broken frame is left for the splice handlers.
+        if len(exons) > 1 or (gene_catalog.get(gene, {}) or {}).get("n_exons", 1) > 1:
+            continue
         if gene not in cache:
             cache[gene] = _load_ref_profile(protein_db, gene)
         if not cache[gene]:
@@ -928,7 +1056,32 @@ _YCF1_MIN_FRAG   = 200
 _YCF1_MIN_DERIVED = 60
 
 
-def _mirror_into_other_ir(span, ir_boundaries):
+def _arcs_to_span(arcs, genome_len):
+    """(start, end) read forward around the circle, for arcs that ARE contiguous.
+
+    Two arcs meeting at the origin describe one interval crossing position 1, and
+    the span is (the arc that starts later, the arc that ends earlier). Taking
+    min(start) and max(end) instead returns (0, genome_len) — the whole genome —
+    which is how a derived ycf1 copy of a few hundred bases could be recorded as
+    spanning the entire plastome.
+
+    Returns None when the arcs are NOT contiguous. Bridging a gap here would invent
+    coordinates covering bases that were never mirrored: [(100,200),(400,500)]
+    became (100,500), silently claiming the 200 bp between them.
+    """
+    arcs = sorted(arcs)
+    if not arcs:
+        return None
+    if len(arcs) == 1:
+        return arcs[0]
+    if len(arcs) == 2 and arcs[0][0] == 0 and arcs[-1][1] == genome_len:
+        return arcs[-1][0], arcs[0][1]          # one interval across the origin
+    if all(b == arcs[i + 1][0] for i, (_, b) in enumerate(arcs[:-1])):
+        return arcs[0][0], arcs[-1][1]          # abutting: genuinely one interval
+    return None                                  # a real gap: not one interval
+
+
+def _mirror_into_other_ir(span, ir_boundaries, genome_len=None):
     """Reflect a genomic interval from one inverted repeat into the other.
 
     IRb and IRa are reverse complements of each other, so a base k positions from
@@ -941,13 +1094,31 @@ def _mirror_into_other_ir(span, ir_boundaries):
     if not irb or not ira:
         return None
     s, e = span
-    if irb[0] <= s and e <= irb[1]:
+    # Containment on the circle: a repeat recorded with start > end crosses the
+    # origin, and `irb[0] <= s and e <= irb[1]` is then false for every interval
+    # inside it.
+    if _within(span, irb, genome_len):
         src, dst = irb, ira
-    elif ira[0] <= s and e <= ira[1]:
+    elif _within(span, ira, genome_len):
         src, dst = ira, irb
     else:
         return None
+    if genome_len:
+        off_s = (s - src[0]) % genome_len
+        off_e = (e - src[0]) % genome_len
+        return ((dst[1] - off_e) % genome_len, (dst[1] - off_s) % genome_len)
     return (dst[1] - (e - src[0]), dst[1] - (s - src[0]))
+
+
+def _within(span, region, genome_len):
+    """Is the whole interval inside the region, reading forward around the circle?"""
+    s, e = span
+    if not genome_len:
+        return region[0] <= s and e <= region[1]
+    want = _coords.region_arcs(s, e, genome_len)
+    have = _coords.region_arcs(region[0], region[1], genome_len)
+    from plastanno.core.coords import _arcs_bp, _inter_bp
+    return _arcs_bp(want) > 0 and _inter_bp(want, have) == _arcs_bp(want)
 
 
 def handle_ycf1(annotations, genome_seq, ir_boundaries, gene_catalog=None):
@@ -982,30 +1153,115 @@ def handle_ycf1(annotations, genome_seq, ir_boundaries, gene_catalog=None):
     min_full = expected * _YCF1_FULL_RATIO
 
     def spliced(f):
-        return sum(e - s for s, e in f.exons) if f.exons else (f.end - f.start)
+        return _coords.spliced_length(f)
 
     # `_select` clusters overlapping copies of a gene, but it runs BEFORE ORF
     # completion. Two disjoint Exonerate cores of the same ycf1 are separate
     # clusters at that point and both survive; completion then extends them into
     # (nearly) the same full-length ORF, leaving a duplicate. Collapse copies that
     # overlap now, keeping the one closest to the catalog length.
-    ycf1_feats.sort(key=lambda f: (f.start, f.end))
+    _glen = len(genome_seq or "") or None
+
+    # Group by overlap, then keep the best of each group. This used to sort by
+    # (start, end) and walk the list keeping the first non-overlapping candidate —
+    # both the sort key and the traversal depend on where position 1 falls, so a
+    # chain where A overlaps B and B overlaps C but A does not overlap C resolved
+    # differently depending on which end of the chain was reached first. Grouping
+    # is transitive and needs no order; overlap is measured on the circle.
+    _n = len(ycf1_feats)
+    _parent = list(range(_n))
+
+    def _find(x):
+        while _parent[x] != x:
+            _parent[x] = _parent[_parent[x]]
+            x = _parent[x]
+        return x
+
+    # Two candidates are the same copy only when each covers most of the other.
+    # Grouping on ANY overlap is transitive, so one candidate straddling two real
+    # loci would bridge them into a single group and delete a genuine copy — ycf1
+    # spans the SSC/IR junction, where a long call really can touch both sides.
+    # Reciprocal coverage cannot be bridged that way.
+    _DUP_RECIPROCAL = 0.5
+
+    def _same_copy(a, b):
+        ov = _coords.region_overlap_bp((a.start, a.end), (b.start, b.end), _glen)
+        if ov <= 0:
+            return False
+        la = _coords.region_length(a.start, a.end, _glen)
+        lb = _coords.region_length(b.start, b.end, _glen)
+        return (min(la, lb) > 0
+                and ov / la >= _DUP_RECIPROCAL and ov / lb >= _DUP_RECIPROCAL)
+
+    for _i in range(_n):
+        for _j in range(_i + 1, _n):
+            if _same_copy(ycf1_feats[_i], ycf1_feats[_j]):
+                ra, rb = _find(_i), _find(_j)
+                if ra != rb:
+                    _parent[ra] = rb
+
+    _groups = {}
+    for _i in range(_n):
+        _groups.setdefault(_find(_i), []).append(ycf1_feats[_i])
+
+    def _seq_key(f):
+        """Invariant last resort: the feature's own bases, not its coordinates."""
+        try:
+            return hashlib.sha256(
+                _coords.extract(genome_seq, f, _glen).encode()).hexdigest()
+        except Exception:
+            return ""
+
+    def _rank_evidence(f):
+        """Biological evidence only — how close the model is to the expected
+        length. The sequence digest is NOT part of this: it orders, it does not
+        rank."""
+        return -abs(spliced(f) - expected) if expected else spliced(f)
+
     deduped = []
-    for f in ycf1_feats:
-        prev = next((g for g in deduped
-                     if min(f.end, g.end) - max(f.start, g.start) > 0), None)
-        if prev is None:
-            deduped.append(f)
-        elif (abs(spliced(f) - expected) < abs(spliced(prev) - expected) if expected
-              else spliced(f) > spliced(prev)):
-            deduped[deduped.index(prev)] = f
+    for members in _groups.values():
+        primary, alts, amb, orderable = _ambiguity.resolve(
+            members, evidence=_rank_evidence, digest=_seq_key,
+            model=lambda f: (tuple(_coords.occupied_arcs(f, _glen)), f.strand))
+
+        def _rec(a):
+            return {"caller": a.engine or "?", "gene_name": a.gene_name,
+                    "type": a.gene_type, "strand": a.strand,
+                    "start": a.start, "end": a.end,
+                    "exons": list(_coords.occupied_arcs(a, _glen)),
+                    "wrapped": _coords.is_wrapped(a), "score": a.confidence,
+                    "distance_bp": 0, "ambiguity_id": amb}
+
+        if amb and not orderable:
+            group = [primary] + list(alts)
+            for f in group:
+                f.ambiguity_id = amb
+                f.flag = "NEEDS_REVIEW"
+                f.alternatives.extend(_rec(o) for o in group if o is not f)
+                f.notes.append(
+                    "%d ycf1 models here are identical in sequence and rank equally "
+                    "(%s); all are reported as one ambiguous locus" % (len(group), amb))
+            deduped.extend(group)
+            continue
+        if amb:
+            primary.ambiguity_id = amb
+            primary.flag = "NEEDS_REVIEW"
+            for a in alts:
+                a.ambiguity_id = amb
+                primary.alternatives.append(_rec(a))
+            primary.notes.append(
+                "%d ycf1 models here rank equally on the evidence (%s); one is "
+                "reported and the rest recorded as alternatives" % (len(alts) + 1, amb))
+        deduped.append(primary)
+    deduped.sort(key=_seq_key)          # a stable order that no rotation changes
     n_dup = len(ycf1_feats) - len(deduped)
     ycf1_feats = deduped
 
     def in_ir(f):
+        _g = len(genome_seq or "") or None
         for key in ("IRa", "IRb"):
             r = (ir_boundaries or {}).get(key)
-            if r and min(f.end, r[1]) - max(f.start, r[0]) > 0:
+            if r and _coords.region_overlap_bp((f.start, f.end), r, _g) > 0:
                 return True
         return False
 
@@ -1046,19 +1302,43 @@ def handle_ycf1(annotations, genome_seq, ir_boundaries, gene_catalog=None):
     if (len(kept) == 1 and not kept[0].is_pseudogene
             and ir_boundaries and ir_boundaries.get("IRa") and ir_boundaries.get("IRb")):
         f = kept[0]
+        _g = len(genome_seq or "") or None
         for key in ("IRb", "IRa"):
             rng = ir_boundaries[key]
-            lo, hi = max(f.start, rng[0]), min(f.end, rng[1])
-            if hi - lo < _YCF1_MIN_DERIVED:
+            # The part of the functional copy that lies inside this repeat, taken
+            # on the circle. max(start, lo)/min(end, hi) is the linear intersection
+            # and is wrong the moment either the gene or the repeat wraps.
+            inter = _coords._inter_bp
+            f_arcs = _coords.region_arcs(f.start, f.end, _g)
+            r_arcs = _coords.region_arcs(rng[0], rng[1], _g)
+            shared = [(max(a, c), min(b, d)) for a, b in f_arcs for c, d in r_arcs
+                      if min(b, d) > max(a, c)]
+            if not shared:
                 continue
-            m = _mirror_into_other_ir((lo, hi), ir_boundaries)
-            if not m or min(m[1], f.end) - max(m[0], f.start) > 0:
+            if sum(b - a for a, b in shared) < _YCF1_MIN_DERIVED:
+                continue
+            # Each shared arc is mirrored on its own. Collapsing them first with
+            # min(start)/max(end) turns two arcs lying either side of the origin
+            # into one interval covering nearly the whole genome, and the mirror of
+            # that is meaningless.
+            mirrored = []
+            for _a, _b in shared:
+                _m = _mirror_into_other_ir((_a, _b), ir_boundaries, _g)
+                if _m:
+                    mirrored.extend(_coords.region_arcs(_m[0], _m[1], _g))
+            if not mirrored or inter(sorted(mirrored), f_arcs) > 0:
+                continue
+            mirrored = sorted(mirrored)
+            m = _arcs_to_span(mirrored, _g)
+            if m is None:
+                # the mirrored pieces do not form one interval; emitting a span
+                # over the gap would claim bases that were never mirrored
                 continue
             g = Feature(
                 gene_name="ycf1", gene_type="CDS",
                 product=f.product or "hypothetical chloroplast RF1",
                 start=m[0], end=m[1], strand=-f.strand,
-                exons=[(m[0], m[1])],
+                exons=mirrored,
                 engine=f.engine, confidence=f.confidence,
                 notes=["derived from the %s copy by inverted-repeat symmetry" % key],
             )

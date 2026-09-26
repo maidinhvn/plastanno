@@ -14,6 +14,8 @@ from pathlib import Path
 from typing import List, Dict
 
 from ..core.feature import Feature
+from ..core import coords as _coords
+from ..core import ambiguity as _ambiguity
 
 
 # Exonerate executable, resolved in order: $PLASTANNO_EXONERATE override, then the
@@ -25,12 +27,9 @@ EXONERATE = (os.environ.get("PLASTANNO_EXONERATE")
 BUFFER    = 2000   # bp buffer around search region
 
 # IR genes need to be searched in both IRb and IRa
-IR_GENES = {
-    "rpl2","rpl23","ndhB","rps7","ycf2",
-    "trnI-CAU","trnI-GAU","trnA-UGC",
-    "trnR-ACG","trnN-GUU","trnL-CAA","trnV-GAC",
-    "rrn16","rrn23","rrn4.5","rrn5",
-}
+# One definition, owned by core.ir_genes. The name is kept so existing imports
+# and the CLAUDE.md reference still resolve; the contents are unchanged.
+from ..core.ir_genes import IR_DUPLICATED_GENES as IR_GENES
 
 RRNA_PRODUCTS = {
     "rrn16" : "16S ribosomal RNA",
@@ -55,8 +54,10 @@ def get_search_regions(gene_name, ir_boundaries, genome_len):
     def region_coords(region):
         coords = ir_boundaries.get(region)
         if not coords: return None
+        # The buffer is applied on the circle. Clamping it to the ends of the
+        # sequence removed exactly the room the aligner needed at the origin.
         s, e = coords
-        return max(0, s-BUFFER), min(genome_len, e+BUFFER)
+        return (s - BUFFER) % genome_len, (e + BUFFER) % genome_len
 
     if gene_name in IR_GENES:
         regions = []
@@ -72,11 +73,20 @@ def get_search_regions(gene_name, ir_boundaries, genome_len):
 
 def run_exonerate_region(genome_seq, protein_seq,
                           gene_name, prot_acc,
-                          region_start, region_end):
-    """Run Exonerate on a specific genomic region."""
-    buf_s = max(0, region_start - BUFFER)
-    buf_e = min(len(genome_seq), region_end + BUFFER)
-    region = genome_seq[buf_s:buf_e]
+                          region_start, region_end, genome_len=None):
+    """Run Exonerate on a genomic region, read forward around the circle.
+
+    The region used to be cut out with `genome_seq[max(0, s - BUFFER):
+    min(L, e + BUFFER)]`. Two things went wrong with that. A region that crosses
+    the origin has start > end, so the slice is EMPTY and every gene in it — clpP
+    and ycf3 in a genome whose LSC wraps — is never searched for. And near either
+    end of the sequence the buffer was clamped away rather than continued from the
+    other side, so a gene at the boundary lost the flank the aligner needed and
+    came back 250-500 bp short.
+    """
+    window = _coords.open_window(genome_seq, region_start, region_end,
+                                 genome_len or len(genome_seq), buffer=BUFFER)
+    region = window.seq
 
     with tempfile.TemporaryDirectory() as tmpdir:
         genome_fa  = os.path.join(tmpdir, "region.fasta")
@@ -105,12 +115,12 @@ def run_exonerate_region(genome_seq, protein_seq,
             return []
 
         hits = _parse_exonerate_gff(
-            result.stdout, gene_name, prot_acc, buf_s
+            result.stdout, gene_name, prot_acc, window
         )
     return hits
 
 
-def _parse_exonerate_gff(gff_text, gene_name, prot_acc, offset):
+def _parse_exonerate_gff(gff_text, gene_name, prot_acc, window):
     """
     Parse an Exonerate protein2genome target-GFF block into Feature objects.
 
@@ -136,10 +146,16 @@ def _parse_exonerate_gff(gff_text, gene_name, prot_acc, offset):
     def finalize(h):
         if h is None:
             return
-        exons = sorted(h["cds"] or h["exon"] or [(h["gstart"], h["gend"])])
+        # Coordinates are still local to the window here; the window maps them onto
+        # the genome, splitting anything that lands across the origin into two arcs
+        # and giving the feature the start > end that says so.
+        local = sorted(h["cds"] or h["exon"] or [(h["gstart"], h["gend"])])
+        exons = sorted(a for ls, le in local for a in window.arcs(ls, le))
+        gs = window.to_genomic(local[0][0])
+        ge = window.interval(local[-1][0], local[-1][1])[1]
         feat = Feature(
             gene_name=gene_name, gene_type="CDS",
-            start=exons[0][0], end=exons[-1][1], strand=h["strand"],
+            start=gs, end=ge, strand=h["strand"],
             engine="A", s_ref=h["sim"],
         )
         feat.exons = exons
@@ -159,8 +175,8 @@ def _parse_exonerate_gff(gff_text, gene_name, prot_acc, offset):
         ftype = parts[2].lower()
         if ftype not in ("gene", "cds", "exon"):
             continue
-        start = int(parts[3]) - 1 + offset
-        end   = int(parts[4]) + offset
+        start = int(parts[3]) - 1          # local to the window; mapped in finalize
+        end   = int(parts[4])
         strand = 1 if parts[6] == "+" else -1
 
         if ftype == "gene":
@@ -192,7 +208,8 @@ def _parse_exonerate_gff(gff_text, gene_name, prot_acc, offset):
 
 def run_exonerate_gene(genome_seq, gene_name,
                         protein_db, ir_boundaries,
-                        gene_catalog, threads=4, ref_proteins=None):
+                        gene_catalog, threads=4, ref_proteins=None,
+                        relatives=None):
     """
     Run Exonerate for one gene using pre-built protein DB.
     If ref_proteins supplies a protein for this gene (from a user-provided
@@ -210,6 +227,35 @@ def run_exonerate_gene(genome_seq, gene_name,
             proteins = list(SeqIO.parse(str(prot_fasta), "fasta"))
         except Exception:
             proteins = []
+
+    # Try the query's closest relatives first.
+    #
+    # Step 3 BLASTs the genome against genus_reps and hands the ranked result to
+    # run_engine_a, which used to discard it: `relatives` appeared twice in this
+    # file, in a comment and in a signature, and never in a body. Every genome was
+    # therefore annotated against the same five references -- whichever five came
+    # first in the FASTA -- two angiosperms, a fern and two algae.
+    #
+    # NC_037507.1 is the demonstration. Its top relative is NC_001319, which IS in
+    # this database and whose atpA is 99.6% identical over 507/507 residues, and
+    # Engine A never tried it because it is not in the first five lines.
+    #
+    # Only the ORDER changes: no protein is added or removed, and the [:5] cap
+    # below is untouched. A genome with no relative in the database keeps exactly
+    # the order it had.
+    if relatives:
+        rank = {}
+        for i, r in enumerate(relatives):
+            acc = str(r.get("accession", "")).split(".")[0]
+            if acc:
+                rank.setdefault(acc, i)
+
+        def _key(idx_prot):
+            i, p = idx_prot
+            src = p.id.rsplit("_" + gene_name, 1)[0].split(".")[0]
+            return (rank.get(src, len(relatives)), i)   # i keeps file order stable
+
+        proteins = [p for _, p in sorted(enumerate(proteins), key=_key)]
 
     # Overlay user-reference protein(s) first (auto fallback to DB below)
     if ref_proteins and gene_name in ref_proteins:
@@ -245,18 +291,36 @@ def run_exonerate_gene(genome_seq, gene_name,
                 prot_acc    = prot.id,
                 region_start= reg_s,
                 region_end  = reg_e,
+                genome_len  = genome_len,
             )
             all_hits.extend(hits)
 
-    # Deduplicate by position
-    deduped = {}
-    for hit in all_hits:
-        key = hit.start // 500
-        if key not in deduped or \
-           hit.s_ref > deduped[key].s_ref:
-            deduped[key] = hit
+    # Deduplicate by actual overlap, not by a 500-bp bucket of the start
+    # coordinate: two hits 2 bp apart either side of a bucket edge both survived,
+    # and two genuine copies inside one bucket were collapsed into one.
+    deduped = []
+    for hit in sorted(all_hits, key=lambda h: -h.s_ref):
+        if not any(_coords.locus_overlap_fraction(k, hit, genome_len) > 0
+                   for k in deduped):
+            deduped.append(hit)
+    return deduped
 
-    return list(deduped.values())
+
+def _rrna_rank(c):
+    """Ordering for rRNA alignment clusters, on keys that survive the transform.
+
+    Score, then how much evidence backs it, then the reference's own name. Query
+    coordinates are deliberately NOT here: they are exactly what a rotation or a
+    reverse complement changes, so ordering by them is deterministic within one
+    presentation of a genome and arbitrary between two. An earlier version had
+    -qs and qe ahead of the subject id; the rrn16 case that prompted this was
+    separated one key earlier, by len_sum, so it happened not to show — a tie at
+    equal score AND equal length would still have flipped.
+
+    If bitscore, aligned length and subject all tie, the two clusters come from the
+    same reference with the same evidence and either is the same answer.
+    """
+    return (c["bitscore"], c["len_sum"], c.get("sid", ""))
 
 
 def detect_rrna(genome_seq, rrna_dbs, threads=4):
@@ -363,13 +427,27 @@ def detect_rrna(genome_seq, rrna_dbs, threads=4):
                             clusters.append({
                                 "qs":h["qs"], "qe":h["qe"], "bitscore":h["bitscore"],
                                 "pident_sum":h["pident"]*h["length"], "len_sum":h["length"],
-                                "strand":sstrand,
+                                "strand":sstrand, "sid":sub_hsps[0]["sid"],
                             })
-                    candidates.append(max(clusters, key=lambda c: c["bitscore"]))
+                    candidates.append(max(clusters, key=_rrna_rank))
 
-                best = max(candidates, key=lambda c: c["bitscore"])
+                # Ties are common here and must not be broken by iteration order.
+                # Two reference subjects scoring exactly 5486.0 on the same rrn16
+                # copy, whose spans differ by ONE base, were separated only by which
+                # HSP BLAST happened to report first — and that order reverses when
+                # the genome is reverse-complemented.
+                #
+                # The shared policy applies: rank on the alignment evidence alone,
+                # collapse clusters that describe the same span, and if several
+                # distinct spans still rank equally, report one as a stable
+                # representative and record the rest.
+                best, _alts, _amb, _ord = _ambiguity.resolve(
+                    candidates,
+                    evidence=lambda c: (c["bitscore"], c["len_sum"]),
+                    digest=lambda c: c.get("sid", ""),
+                    model=lambda c: (c["qs"], c["qe"], c["strand"]))
                 pident = best["pident_sum"] / best["len_sum"]
-                features.append(Feature(
+                _f = Feature(
                     gene_name = gene,
                     gene_type = "rRNA",
                     product   = RRNA_PRODUCTS.get(gene, gene),
@@ -378,7 +456,25 @@ def detect_rrna(genome_seq, rrna_dbs, threads=4):
                     strand    = best["strand"],
                     engine    = "A",
                     s_ref     = pident / 100,
-                ))
+                )
+                if _amb:
+                    _f.ambiguity_id = _amb
+                    _f.flag = "NEEDS_REVIEW"
+                    for _a in _alts:
+                        _f.alternatives.append({
+                            "caller": "BLAST", "gene_name": gene, "type": "rRNA",
+                            "strand": _a["strand"], "start": _a["qs"],
+                            "end": _a["qe"], "exons": [(_a["qs"], _a["qe"])],
+                            "wrapped": _a["qs"] > _a["qe"],
+                            "score": round(_a["bitscore"], 1),
+                            "distance_bp": abs(_a["qs"] - best["qs"]),
+                            "ambiguity_id": _amb,
+                        })
+                    _f.notes.append(
+                        "%d reference alignments rank equally here (%s); one span "
+                        "is reported and the rest recorded"
+                        % (len(_alts) + 1, _amb))
+                features.append(_f)
     finally:
         os.unlink(qfa)
 
@@ -447,6 +543,7 @@ def run_engine_a(
             gene_catalog = gene_catalog,
             threads      = threads,
             ref_proteins = ref_proteins,
+            relatives    = relatives,
         )
         features.extend(hits)
 

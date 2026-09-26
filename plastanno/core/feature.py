@@ -61,12 +61,29 @@ class Feature:
     # produced this feature. Non-zero means the aligned extent is not a whole
     # number of codons, so the reading frame is broken.
     frameshifts     : int = 0
+    # Set when the evidence could not choose between several distinct models at
+    # this locus. Every candidate in the group carries the same id, so a locus the
+    # evidence left undecided counts ONCE however many models it had.
+    ambiguity_id    : Optional[str] = None
+    # True when the exon model is structurally impossible — exons that overlap,
+    # repeat, run backwards or fall outside the sequence. Such a feature reports one
+    # length to QC and hands a longer sequence to the translator, so it is
+    # quarantined: coordinates kept, translation withheld, written as a partial.
+    geometry_invalid: bool = False
     # True when the CDS begins at a recognised NON-ATG initiator (psbL/ndhD/...),
     # which in plastids is created by C-to-U RNA editing. GenBank marks such a CDS
     # with /exception="RNA editing"; without it the start codon is simply illegal.
     rna_edited_start: bool = False
+    # Other callers' models for this same locus, kept whatever the flagging
+    # threshold is: [{source, start, end, wrapped, distance_bp, structural}]
+    alternatives    : List[dict] = field(default_factory=list)
     flag            : str = "HIGH"  # HIGH/MEDIUM/NEEDS_REVIEW
     notes           : List[str] = field(default_factory=list)
+    # The flag as reconciliation left it, before core.finalize had its say. Saved
+    # on the first finalize pass and restored at the start of every later one, so
+    # finalising twice cannot leave a feature flagged for a problem that an
+    # intervening fix already removed.
+    pre_qc_flag     : Optional[str] = None
 
     def compute_confidence(self, available=None, base_weights=None):
         """

@@ -11,18 +11,23 @@ import tarfile
 import urllib.request
 from pathlib import Path
 
-# Zenodo concept DOI 10.5281/zenodo.20807994 -> version record 20807995
-URL = "https://zenodo.org/records/20807995/files/plastanno-database.tar.gz"
-MD5 = "d366f7ea58a78a5cb43cb42a8639d2e2"
+# Zenodo concept DOI 10.5281/zenodo.20807994 -> version record 22960386
+# Both constants must change together: fetch_db verifies the MD5 after the
+# download and exits on a mismatch, so a new URL with a stale MD5 fails for
+# every user even though the file is correct.
+URL = "https://zenodo.org/records/22960386/files/plastanno-database.tar.gz"
+MD5 = "68656c3071c294c2ad32f454af87fc71"
 
 
 def _data_parent() -> Path:
-    """Directory whose ``database/`` subdir db_root() resolves to."""
-    try:
-        import platformdirs
-        return Path(platformdirs.user_data_dir("plastanno"))
-    except Exception:
-        return Path.home() / ".local" / "share" / "plastanno"
+    """Directory whose ``database/`` subdir db_root() resolves to.
+
+    Delegates to ``paths.user_data_parent`` rather than repeating the logic: the
+    two copies previously disagreed when platformdirs was absent, so fetch-db
+    installed where db_root would never look.
+    """
+    from .paths import user_data_parent
+    return user_data_parent()
 
 
 def _progress(blocks, bsize, total):
