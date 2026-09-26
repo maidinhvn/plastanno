@@ -13,6 +13,13 @@ If the MD5 is not updated, `fetch-db` aborts with a checksum mismatch. If only
 the MD5 is updated, users download the old bundle and the check fails. Both must
 change together.
 
+`plastanno/fetch_db.py` is the **only** place these two constants are written.
+`scripts/get_database.sh`, which CI uses, reads them out of that file instead of
+repeating them. It did repeat them once, and the copies drifted: the script kept
+pointing at the superseded record, whose own checksum still matched, so it
+downloaded an older database and reported success. Do not reintroduce a second
+copy — if another consumer needs the URL, derive it from `fetch_db.py` too.
+
 ## What changed in this update
 
 Eight genes that the previous bundle lacked:
@@ -56,10 +63,10 @@ whose root is `blast_db/`, `hmm_db/`, … extracts to the wrong place and
 ## Step 2 — publish a new version on Zenodo
 
 The deposit has a **concept DOI** (`10.5281/zenodo.20807994`) that always points
-at the newest version, and a per-version record (`20807995` for the current one).
+at the newest version, and a per-version record (`22960386` for the current one).
 Publishing a new version keeps the concept DOI and mints a new record.
 
-1. Open the concept DOI, or the current record `20807995`.
+1. Open the concept DOI, or the current record `22960386`.
 2. Choose **New version** (not a new upload — a new upload would create a
    separate deposit with its own concept DOI and break the link to earlier
    versions).

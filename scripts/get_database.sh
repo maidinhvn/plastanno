@@ -4,11 +4,23 @@
 set -e
 cd "$(dirname "$0")/.."                 # project root
 
-URL="https://zenodo.org/records/20807995/files/plastanno-database.tar.gz"
-MD5="d366f7ea58a78a5cb43cb42a8639d2e2"
+# The download location is defined in exactly one place — plastanno/fetch_db.py,
+# which `plastanno fetch-db` also uses. Read it from there rather than repeating
+# it here: the two copies drifted once already (this script kept pointing at a
+# superseded Zenodo record, whose checksum still matched, so CI silently
+# installed an older database instead of failing).
+SRC="plastanno/fetch_db.py"
+URL=$(sed -n 's/^URL[[:space:]]*=[[:space:]]*"\(.*\)".*/\1/p' "$SRC")
+MD5=$(sed -n 's/^MD5[[:space:]]*=[[:space:]]*"\(.*\)".*/\1/p' "$SRC")
+if [ -z "$URL" ] || [ -z "$MD5" ]; then
+    echo "ERROR: could not read URL/MD5 from $SRC." >&2
+    echo "       Expected lines of the form:  URL = \"https://...\"" >&2
+    exit 1
+fi
 TAR="plastanno-database.tar.gz"
 
 echo "[1/3] Downloading reference databases (~266 MB) from Zenodo ..."
+echo "      $URL"
 if command -v curl >/dev/null 2>&1; then
     curl -L -o "$TAR" "$URL"
 elif command -v wget >/dev/null 2>&1; then

@@ -10,6 +10,7 @@ jobs:
   test:
     name: Test on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -30,19 +31,32 @@ jobs:
       - name: Create environment (Python + external tools)
         run: |
           conda create -n plastanno -y \
-            python=3.10 biopython pandas blast exonerate hmmer aragorn
+            python=3.10 biopython pandas numpy scipy matplotlib platformdirs \
+            blast exonerate hmmer aragorn trnascan-se
 
       # Everything below uses `conda run -n plastanno` so it never depends on
       # shell activation persisting between steps.
       - name: Check external tools are installed
         run: |
           conda run -n plastanno bash -c '
-            for t in blastn makeblastdb exonerate hmmsearch aragorn; do
+            for t in blastn makeblastdb exonerate hmmsearch aragorn tRNAscan-SE; do
               p=$(command -v "$t") && echo "$t -> $p" || { echo "MISSING: $t"; exit 1; }
             done'
 
       - name: Download reference databases (from Zenodo)
         run: conda run -n plastanno bash scripts/get_database.sh
+
+      # The suite is fast and needs no network. Run every file rather than
+      # stopping at the first failure, so one red run reports all of them.
+      - name: Run the test suite
+        run: |
+          conda run -n plastanno bash -c '
+            fail=0
+            for t in tests/test_*.py; do
+              echo "--- $t"
+              python3 "$t" || fail=1
+            done
+            exit $fail'
 
       - name: Annotate the bundled example
         run: conda run -n plastanno python3 plastanno.py run example/NC_053537.1.fasta --output out --no-plot --threads 2
