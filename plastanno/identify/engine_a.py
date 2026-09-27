@@ -23,7 +23,7 @@ from ..core import ambiguity as _ambiguity
 # while still working out-of-the-box where exonerate is already on PATH.
 EXONERATE = (os.environ.get("PLASTANNO_EXONERATE")
              or shutil.which("exonerate")
-             or "/data06/biotools/anaconda3/bin/exonerate")
+             or "exonerate")            # fails naming the binary, not a stranger's path
 BUFFER    = 2000   # bp buffer around search region
 
 # IR genes need to be searched in both IRb and IRa

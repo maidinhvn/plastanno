@@ -213,6 +213,41 @@ def main():
     print("Detection (name+overlap, any boundary): %d / %d ref" % (detect, len(ref)))
     print("-" * 62)
 
+    # Boundary resolution.
+    #
+    # A single TP count at one tolerance hides how much of it is loose. At
+    # +/-60 bp a prediction one nucleotide out scores exactly the same as one
+    # that is exact, so the headline number cannot distinguish a tool that
+    # places boundaries correctly from one that is systematically off by one --
+    # measured on this corpus, a third of tRNA loci differ between those two
+    # readings while the +/-60 count moves by a single locus.
+    #
+    # This block only re-reads the pairs `run()` already matched. It changes no
+    # TP/FP/FN and no F1, so the published figure stays reproducible.
+    print("Boundary resolution of the %d matched pairs:" % nTP)
+    print("  %-10s %6s %8s   %s" % ("tolerance", "TP", "of TP", "per type (CDS/tRNA/rRNA)"))
+    for t in (0, 1, 2, 5, 10, 30, a.tol):
+        if t > a.tol:
+            continue
+        per = defaultdict(int)
+        n_at = 0
+        for p, r, _s in tp:
+            if abs(p["start"] - r["start"]) <= t and abs(p["end"] - r["end"]) <= t:
+                n_at += 1
+                per[r["type"]] += 1
+        tag = "  <-- reported above" if t == a.tol else ""
+        print("  +/-%-7d %6d %7.1f%%   %d / %d / %d%s"
+              % (t, n_at, 100.0 * n_at / nTP if nTP else 0.0,
+                 per["CDS"], per["tRNA"], per["rRNA"], tag))
+    n_exact = sum(1 for p, r, _s in tp
+                  if p["start"] == r["start"] and p["end"] == r["end"])
+    ex_sens = n_exact / (nTP + nFN) if (nTP + nFN) else 0.0
+    ex_prec = n_exact / (nTP + nFP) if (nTP + nFP) else 0.0
+    ex_f1 = 2 * ex_sens * ex_prec / (ex_sens + ex_prec) if (ex_sens + ex_prec) else 0.0
+    print("  exact-coordinate F1 = %.1f%%   (tol=+/-%d F1 = %.1f%%)"
+          % (ex_f1 * 100, a.tol, f1 * 100))
+    print("-" * 62)
+
     bt = defaultdict(lambda: [0, 0, 0])
     for p, r, s in tp:
         bt[r["type"]][0] += 1

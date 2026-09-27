@@ -74,8 +74,19 @@ def run_one(acc, workdir, bm):
     try:
         ref  = bm.load_units(ref_gb)
         pred = bm.load_units(pred_gb)
+        # Scored at TWO tolerances. +/-60 is the published figure and its keys are
+        # untouched, so every number in bench_runs/*.log stays reproducible.
+        #
+        # +/-0 is added because +/-60 cannot see boundary quality at all: a call
+        # that is one base out scores identically to an exact one. Measured on the
+        # development set, 63% of tRNA had inexact boundaries while tRNA F1 read
+        # 93.6%, and the whole --exon-mode/--trna-mode programme moved ONE locus
+        # at +/-60. A benchmark that cannot see the defect cannot see the fix
+        # either, in either direction.
         tp, fp, fn, detect, mism = bm.run(ref, pred, 60, 0.6)
+        tp0, fp0, fn0, _d0, _m0 = bm.run(ref, pred, 0, 0.6)
         tp_t = Counter(rr["type"] for _p, rr, _s in tp)
+        tp_t0 = Counter(rr["type"] for _p, rr, _s in tp0)
         return {
             "acc": acc, "status": "OK",
             "tp": len(tp), "fp": len(fp), "fn": len(fn),
@@ -83,6 +94,8 @@ def run_one(acc, workdir, bm):
             "tp_by_type":  dict(tp_t),
             "ref_by_type": dict(Counter(u["type"] for u in ref)),
             "pred_by_type": dict(Counter(u["type"] for u in pred)),
+            "tp_exact": len(tp0), "fp_exact": len(fp0), "fn_exact": len(fn0),
+            "tp_by_type_exact": dict(tp_t0),
         }
     except Exception as e:
         return {"acc": acc, "status": "BENCH_ERROR", "err": str(e)[:200]}
@@ -116,6 +129,23 @@ def aggregate(results, modes):
                     (statistics.pstdev(per)*100 if len(per) > 1 else 0.0),
                     min(per)*100, max(per)*100))
 
+    # The same pooled figure at zero tolerance. Reported beside the headline, not
+    # instead of it: the gap between the two IS the boundary-quality measurement.
+    if any("tp_exact" in r for r in ok):
+        oke = [r for r in ok if "tp_exact" in r]
+        TP0 = sum(r["tp_exact"] for r in oke)
+        FP0 = sum(r["fp_exact"] for r in oke)
+        FN0 = sum(r["fn_exact"] for r in oke)
+        s0, p0, f0 = f1(TP0, FP0, FN0)
+        lines.append("GLOBAL at +/-0    (exact): TP=%d FP=%d FN=%d  Sens=%.1f%% Prec=%.1f%% F1=%.1f%%"
+                     % (TP0, FP0, FN0, s0*100, p0*100, f0*100))
+        lines.append("  boundary cost: %.1f F1 points are spent on inexact boundaries"
+                     " (%d of %d matches are not exact)"
+                     % ((f - f0)*100, TP - TP0, TP))
+        if len(oke) != len(ok):
+            lines.append("  NOTE: %d of %d genomes predate the +/-0 measurement and are"
+                         " excluded from it" % (len(ok) - len(oke), len(ok)))
+
     lines.append("")
     lines.append("By gene type (pooled):")
     for t in ("CDS", "tRNA", "rRNA"):
@@ -126,6 +156,24 @@ def aggregate(results, modes):
         s, p, ff = f1(tp_t, fp_t, fn_t)
         lines.append("  %-5s TP=%-5d ref=%-5d pred=%-5d  Sens=%.1f%% Prec=%.1f%% F1=%.1f%%"
                      % (t, tp_t, rf_t, pr_t, s*100, p*100, ff*100))
+
+    # A separate block rather than a tail on the rows above, so the +/-60 section
+    # stays character-for-character what it has always been and an old log can be
+    # diffed against a new one.
+    if any("tp_by_type_exact" in r for r in ok):
+        lines.append("")
+        lines.append("By gene type at +/-0 (exact boundaries):")
+        for t in ("CDS", "tRNA", "rRNA"):
+            rf_t = sum(r["ref_by_type"].get(t, 0) for r in ok)
+            pr_t = sum(r["pred_by_type"].get(t, 0) for r in ok)
+            tp_t = sum(r["tp_by_type"].get(t, 0) for r in ok)
+            tp_e = sum(r.get("tp_by_type_exact", {}).get(t, 0) for r in ok)
+            _s, _p, ff = f1(tp_t, pr_t - tp_t, rf_t - tp_t)
+            se, pe, fe = f1(tp_e, pr_t - tp_e, rf_t - tp_e)
+            lines.append("  %-5s TP=%-5d  Sens=%.1f%% Prec=%.1f%% F1=%.1f%%"
+                         "   boundary cost %.1f pts   exact/matched %.1f%%"
+                         % (t, tp_e, se*100, pe*100, fe*100, (ff - fe)*100,
+                            100*tp_e/tp_t if tp_t else 0.0))
 
     lines.append("")
     lines.append("By structure mode (pooled):")

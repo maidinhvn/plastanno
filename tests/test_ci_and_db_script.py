@@ -97,6 +97,25 @@ real = subprocess.run(
     capture_output=True, text=True).stdout.strip()
 check("extraction from the real file matches fetch_db.URL", real, fetch_db.URL)
 
+# No absolute path from a developer's machine may ship in the public tree. The
+# repository rule has existed since 2.x ("remove personal paths -> $PLASTANNO_DATA")
+# and was broken again by copying a benchmark test across from the dev tree.
+print()
+print("no personal paths")
+import glob
+leaked = []
+for pat in ("plastanno/**/*.py", "scripts/**/*.py", "scripts/**/*.sh",
+            "tests/*.py", "*.py", "*.sh"):
+    for f in glob.glob(os.path.join(ROOT, pat), recursive=True):
+        body = open(f, encoding="utf-8", errors="replace").read()
+        # assembled at runtime so this file does not contain the literals it
+        # searches for, which would make the check flag itself
+        for marker in ("/data06/" + "users/", "/data06/" + "biotools/",
+                       "/home/" + "vutrinh"):
+            if marker in body:
+                leaked.append("%s -> %s" % (os.path.relpath(f, ROOT), marker))
+check("no developer-machine path in the published tree", leaked, [])
+
 # --------------------------------------------------------------- the workflow
 print()
 print(".github/workflows/ci.yml")
