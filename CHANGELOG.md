@@ -52,8 +52,9 @@ never used during development.
 ## [3.0.0] — 2026-09-26
 
 The pooled-architecture line reaches the public release — 149 commits in the
-development repository between the 2.0.5 and 3.0.0 tags. 2.0.5 predates it entirely, so this is the architecture the tool was
-refactored into rather than a patch on top of the previous one.
+development repository between the 2.0.5 and 3.0.0 tags. The previous release
+predates that line entirely, so this is the architecture the tool was refactored
+into rather than a patch on top of it.
 
 **A major version because upgrading changes results and requires more of the
 environment.** Every changed default keeps a `legacy` setting that reproduces the
