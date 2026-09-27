@@ -105,7 +105,7 @@ environment.** Every changed default keeps a `legacy` setting that reproduces th
   `paths` each resolved the user-data directory separately and the two copies had
   drifted: without `platformdirs`, `fetch-db` wrote to `~/.local/share/plastanno`
   while `db_root` skipped that location and returned the repo layout — so a user
-  could download 267 MB and still be told the database was missing.
+  could download 266 MB and still be told the database was missing.
   `paths.user_data_parent` is now the single source of truth for both.
 
 ### Changed — reference database
