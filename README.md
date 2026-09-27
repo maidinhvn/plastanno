@@ -339,9 +339,18 @@ python3 scripts/benchmark/multi_genome_bench.py --n 120 --workers 16
 
 ## Performance
 
-Measured accuracy is not quoted here; see the note in the introduction. The
-design targets carried over from the predecessor tool are CDS Sn > 92% /
-Pr > 95%, rRNA Sn/Pr > 97%, tRNA Sn > 88% / Pr > 90%.
+**No overall accuracy figure is quoted here**, and no comparison against another
+tool — those are the two claims withdrawn in the introduction. The design targets
+carried over from the predecessor tool are CDS Sn > 92% / Pr > 95%, rRNA
+Sn/Pr > 97%, tRNA Sn > 88% / Pr > 90%.
+
+`plastanno run --help` does quote numbers, and they stand. They are a different
+kind of measurement: each compares two modes of *this* tool on the same genomes
+(for example `--intron-mode`, exact tRNA coordinates 13.0% → 55.1% over 5,178
+loci in 645 plastomes, 0 loci made worse), so the comparison is internal and
+paired. None of them comes from the contaminated held-out set, and none ranks
+Plastanno against another tool. What needs the independent review is the overall
+figure and the cross-tool comparison, not these.
 
 **Runtime is a deliberate trade.** The original target was < 60 s per genome and
 the 3.0.0 defaults do not meet it: `--trna-mode hybrid` and `--intron-mode

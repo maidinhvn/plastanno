@@ -39,11 +39,14 @@ PY
 echo ""
 echo "================ 4. EXTERNAL TOOLS ================"
 echo "  -- required --"
-for t in makeblastdb blastn tblastn exonerate nhmmer hmmsearch aragorn ; do
+for t in makeblastdb blastn tblastn exonerate nhmmer hmmsearch aragorn tRNAscan-SE ; do
   printf "  %-14s %s\n" "$t" "$(command -v $t 2>/dev/null || echo KHONG-TIM-THAY)"
 done
+# tRNAscan-SE moved up from the optional group at 3.0.0: the default
+# --trna-mode is `hybrid` and pipeline.run raises before step 1 without it, so
+# reporting it as "khong co (optional)" told users a broken environment was fine.
 echo "  -- optional (not needed for a default run) --"
-for t in tRNAscan-SE barrnap mafft muscle ; do
+for t in barrnap mafft muscle ; do
   printf "  %-14s %s\n" "$t" "$(command -v $t 2>/dev/null || echo 'khong co (optional)')"
 done
 
