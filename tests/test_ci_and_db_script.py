@@ -102,19 +102,26 @@ check("extraction from the real file matches fetch_db.URL", real, fetch_db.URL)
 # and was broken again by copying a benchmark test across from the dev tree.
 print()
 print("no personal paths")
+# This rule is about the PUBLISHED tree only. The development tree legitimately
+# contains absolute paths to a private dataset, and it is identifiable because
+# it is the one that CONTAINS the public checkout as a subdirectory.
 import glob
-leaked = []
-for pat in ("plastanno/**/*.py", "scripts/**/*.py", "scripts/**/*.sh",
-            "tests/*.py", "*.py", "*.sh"):
-    for f in glob.glob(os.path.join(ROOT, pat), recursive=True):
-        body = open(f, encoding="utf-8", errors="replace").read()
-        # assembled at runtime so this file does not contain the literals it
-        # searches for, which would make the check flag itself
-        for marker in ("/data06/" + "users/", "/data06/" + "biotools/",
-                       "/home/" + "vutrinh"):
-            if marker in body:
-                leaked.append("%s -> %s" % (os.path.relpath(f, ROOT), marker))
-check("no developer-machine path in the published tree", leaked, [])
+if os.path.isdir(os.path.join(ROOT, "forgit")):
+    print("  skip  development tree — personal paths are allowed here")
+    leaked = None
+else:
+    leaked = []
+    for pat in ("plastanno/**/*.py", "scripts/**/*.py", "scripts/**/*.sh",
+                "tests/*.py", "*.py", "*.sh"):
+        for f in glob.glob(os.path.join(ROOT, pat), recursive=True):
+            body = open(f, encoding="utf-8", errors="replace").read()
+            # assembled at runtime so this file does not contain the literals it
+            # searches for, which would make the check flag itself
+            for marker in ("/data06/" + "users/", "/data06/" + "biotools/",
+                           "/home/" + "vutrinh"):
+                if marker in body:
+                    leaked.append("%s -> %s" % (os.path.relpath(f, ROOT), marker))
+    check("no developer-machine path in the published tree", leaked, [])
 
 # --------------------------------------------------------------- the workflow
 print()
