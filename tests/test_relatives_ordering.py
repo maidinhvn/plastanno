@@ -79,6 +79,18 @@ def run_with(relatives, db=DB, cap_seen=None):
     return seen
 
 
+# run_exonerate_gene below is given protein_db="database/protein_db", which it
+# resolves against the working directory, so the check has to use the same form.
+if not os.path.isdir("database/protein_db"):
+    print()
+    print("  SKIPPED: this file needs the downloaded database "
+          "(database/protein_db).")
+    print("           Run `plastanno fetch-db` or "
+          "`bash scripts/get_database.sh` first.")
+    print()
+    print("%d checks, %d failed" % (RUN[0], len(FAIL)))
+    sys.exit(1 if FAIL else 0)
+
 print("--- 1. with no relatives, file order is preserved ---")
 seen = run_with(None)
 check("the first five in file order are tried",

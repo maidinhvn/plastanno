@@ -8,6 +8,12 @@ never used during development.
 
 ### Fixed
 
+- **The 3.0.0 entry miscounted its own test suite.** It said "Thirteen test
+  files, 206 checks, none needing an external dataset". The tag has fourteen
+  files and 365 checks, and one of them, `test_relatives_ordering.py`, does need
+  the downloaded database — it passed `protein_db="database/protein_db"` and
+  raised `IndexError` rather than saying so when the directory was absent. The
+  count is corrected above and the test now skips with a message.
 - **Circular map: names containing `_` were drawn wrongly.** The organism name
   is italicised with mathtext, and the name was interpolated into
   `$\mathit{...}$` without escaping, so mathtext read its markup characters as
@@ -120,7 +126,9 @@ are dropped.
 
 ### Added — tests
 
-Thirteen test files, 206 checks, none needing an external dataset:
+Fourteen test files, 365 checks. All but one need no external data;
+`test_relatives_ordering.py` drives Engine A against `database/protein_db`
+and skips with a message when the database has not been downloaded:
 
     for t in tests/test_*.py; do python3 "$t" || echo "FAILED: $t"; done
 
