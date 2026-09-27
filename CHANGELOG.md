@@ -4,6 +4,45 @@ All notable changes to Plastanno v2. Benchmarks are measured on the DEV split
 (n=123 shared genomes) against reference GenBank annotations; the held-out set is
 never used during development.
 
+## [Unreleased]
+
+### Fixed
+
+- **Circular map: names containing `_` were drawn wrongly.** The organism name
+  is italicised with mathtext, and the name was interpolated into
+  `$\mathit{...}$` without escaping, so mathtext read its markup characters as
+  markup. When `--organism` was not given the accession took its place, and
+  `NC_053537.1` was drawn as "NC" with a subscript zero followed by "53537.1" —
+  in the title and the centre label, in all three output formats. All of
+  `$ { } ^ _ # & % ~` and the backslash are now escaped.
+- **`scripts/get_database.sh` downloaded the previous database.** It kept its own
+  copy of the Zenodo URL and MD5, which was not updated when the 3.0.0 database
+  was published. The superseded record still exists and its checksum still
+  matched, so the script fetched the older bundle — the one without the eight
+  added genes — and exited 0. It now reads both constants from
+  `plastanno/fetch_db.py`, the single place they are written.
+
+### Changed
+
+- **Documentation brought up to 3.0.0.** `README.md` still described the
+  pre-3.0.0 architecture and listed tRNAscan-SE as optional, which it is not
+  under the default `--trna-mode hybrid`; `numpy`, `scipy` and `platformdirs`
+  were missing from the dependency list. `docs/ARCHITECTURE.md` still gave the
+  fixed-weight scoring formula that 3.0.0 does not use and reported 81 HMM
+  profiles where the shipped database has 168.
+- **Performance claims withdrawn from the public README.** The held-out F1 and
+  the head-to-head against one other tool have been removed rather than
+  updated: the reference databases were built before the evaluation split, so
+  that set was largely represented in them, and the comparison used a scorer
+  that has since been replaced. Measured performance will be published with the
+  manuscript after an independent review of the scorer and protocol.
+- **Schematic figures redrawn** from the code. `Fig2_reconciliation` is replaced
+  by `Fig2_selection`, since the cross-engine reconciliation it depicted is
+  neither the default nor a claim still made. `Fig3`, `Fig4` and `Fig7` are
+  removed for the reasons above — `Fig7` asserted a leakage-free evaluation set
+  that was not leakage-free.
+- CI installs the dependencies 3.0.0 actually needs, and runs the test suite.
+
 ## [3.0.0] — 2026-09-26
 
 The pooled-architecture line, developed over 90 commits, reaches the public

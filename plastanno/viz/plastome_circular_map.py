@@ -35,8 +35,11 @@ from Bio import SeqIO
 
 # ---- Journal-quality figure defaults --------------------------------------
 # Embed TrueType fonts in PDF/PS (journals reject Type-3); keep SVG text as text
-# (editable); use a sans-serif face. Vector PDF/SVG are resolution-independent;
-# the PNG is rasterised at --dpi (default 600, line-art standard).
+# (editable); use a sans-serif face. Vector PDF/SVG are resolution-independent.
+# The PNG is rasterised at the `dpi` argument of draw_map. There is no --dpi
+# command-line flag: the pipeline calls draw_map with dpi=300 (writers.py),
+# which is what every run produces. This comment used to claim a flag that
+# does not exist and a default of 600 that the pipeline overrides.
 matplotlib.rcParams.update({
     "pdf.fonttype": 42,
     "ps.fonttype": 42,
@@ -155,6 +158,33 @@ def _spread(angles, dmin):
     return a
 
 
+def _mathit(name: str) -> str:
+    """Italicise a name with mathtext, escaping what mathtext would swallow.
+
+    The name goes inside $\\mathit{...}$, so every character mathtext treats as
+    markup has to be escaped first. Without this an accession used in place of a
+    binomial -- which is what happens when --organism is not given -- rendered
+    wrongly: NC_053537.1 came out as "NC" with a subscript zero followed by
+    53537.1, because mathtext read the underscore as a subscript operator.
+
+    Done one character at a time on purpose. Doing it as a sequence of
+    str.replace calls means each pass can rewrite what an earlier pass emitted:
+    the space in "\\backslash " was itself turned into "\\ " by the pass that
+    handles spaces.
+    """
+    out = []
+    for ch in name:
+        if ch == "\\":
+            out.append(r"\backslash ")   # mathtext has no escape for a literal one
+        elif ch == " ":
+            out.append(r"\ ")
+        elif ch in "${}^_#&%~":
+            out.append("\\" + ch)
+        else:
+            out.append(ch)
+    return "$\\mathit{" + "".join(out) + "}$"
+
+
 def draw_map(rec, ir, organism, rotate_deg, out, dpi=600):
     L = len(rec.seq)
     ROT = math.radians(rotate_deg)
@@ -267,7 +297,7 @@ def draw_map(rec, ir, organism, rotate_deg, out, dpi=600):
     radial_labels(ax, rev, REV_IN, LAB_IN)        # reverse -> labels inside
 
     # centre: scientific name in italics (space preserved), accession, total size
-    org_it = "$\\mathit{" + organism.replace(" ", r"\ ") + "}$"
+    org_it = _mathit(organism)
     ax.text(0, 0, f"{org_it}\n{rec.id}\n{L:,} bp", ha="center", va="center", fontsize=13)
 
     order = ["Photosynthesis", "NADH dehydrogenase", "Ribosomal proteins", "RNA polymerase",

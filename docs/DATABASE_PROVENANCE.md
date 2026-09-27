@@ -30,18 +30,30 @@ Only the small configuration files (`gene_catalog.json`, `exon_templates.json`,
 distributed via Zenodo (DOI in the README) or can be rebuilt with
 `scripts/build/build_all.py`.
 
-## Leakage-free held-out evaluation
+## The held-out evaluation, and why its claim was withdrawn
 
-Generalisation is measured on a **leakage-free test set of 2,151 land-plant
-plastomes whose own sequences are verified to be absent from every reference
-database** (the per-gene proteins, the profile HMMs, the tRNA and tRNA-exon
-databases, the rRNA databases, and the genus-representative set). It comprises:
+An earlier version of this document stated that generalisation was measured on a
+**leakage-free test set of 2,151 land-plant plastomes whose sequences are absent
+from every reference database**, and reported a global F1 from it.
 
-- **498** plastomes held out from development and confirmed absent from all
-  databases, and
-- **1,653** RefSeq plastomes deposited after the databases were built, hence
-  never present during database construction or tuning.
+That premise does not hold. The reference databases were built **before** the
+evaluation split was drawn, so most of that set was in fact represented in them.
+The set was held out from *tuning*, which is a real and useful property, but it
+was not held out from *database construction* — and it is the databases that
+Engine A and Engine B search. The F1 measured on it therefore does not separate
+generalisation from retrieval of material already in the databases, which is
+exactly what the claim asserted it did.
 
-Because no test genome's sequence appears in any reference database, the reported
-global F1 of 92.5% reflects performance on plastomes the tool has genuinely never
-seen, rather than memorised reference data.
+Both the claim and the number are withdrawn rather than adjusted. What the set
+still is:
+
+- **498** plastomes held out from development, and
+- **1,653** RefSeq plastomes deposited after the databases were built.
+
+The second stratum is genuinely unseen by construction — a plastome deposited
+later cannot be in an earlier database. The first is not, in general.
+
+`Plastanno_dataset_inventory.xlsx` lists both the development collection and this
+set, accession by accession, so the composition is inspectable regardless of what
+is claimed about it. A corrected evaluation, on a pool built after the split
+rather than before it, will be published with the manuscript.

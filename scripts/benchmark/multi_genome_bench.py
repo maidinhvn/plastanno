@@ -165,7 +165,7 @@ def main():
                          "chunk runs, e.g. splits/heldout_chunks/chunk_00.txt")
     ap.add_argument("--raw", default=None,
                     help="override the rawdata directory holding <acc>.fasta and "
-                         "<acc>.gb (e.g. a leakage-free held-out v2 eval folder)")
+                         "<acc>.gb (e.g. a held-out v2 eval folder)")
     a = ap.parse_args()
 
     if a.raw:

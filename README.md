@@ -7,14 +7,18 @@
 
 Given a plastome FASTA, Plastanno predicts CDS, tRNA and rRNA features and writes
 GenBank, GFF3, FASTA and report outputs — plus a circular plastome map. Its
-defining design is a **hybrid of two independent annotation engines whose results
-are merged by a scoring/reconciliation layer** that assigns every feature a
-normalised confidence score, a review flag, and full provenance.
+defining design is **two independent engines that each propose candidates — one
+reference-based, one model-based — pooled and resolved by a single selector that
+keeps one feature per locus**, with a review flag and full provenance on every
+feature. Boundaries are refined only after the inventory is settled, so a
+boundary change can never add or remove a gene.
 
-On a **leakage-free held-out set of 2,151 land-plant plastomes** (sequences not
-represented in any reference database), Plastanno reaches a gene-by-gene
-**F1 of 92.5%** (CDS 93.0, tRNA 90.3, rRNA 97.2). In a head-to-head on a common
-subset it scores **92.0 vs 87.8 F1** against PGA, winning on 145 of 245 genomes.
+Earlier releases of this README quoted a held-out F1 and a head-to-head against
+one other tool. Both have been withdrawn: the reference databases were built
+before the evaluation split, so that "held-out" set was largely represented in
+them, and the comparison used a scorer that has since been replaced. Measured
+performance will be published with the manuscript, once the scorer and protocol
+have had an independent review.
 
 ---
 
@@ -26,20 +30,33 @@ A 7-step pipeline (`plastanno/pipeline.py`):
 2. **IR detection** (`identify/ir_detector.py`) — self-BLASTN; the longest
    minus-strand HSP ≥ 10 kb defines the inverted-repeat pair → `{LSC, IRb, SSC, IRa}`.
 3. **Closest relatives** (`identify/closest_rel.py`) — BLAST against genus
-   representatives; taxonomy selects the tRNA-DB tier.
+   representatives, ranked, for the tRNA search.
 4. **Two engines, in parallel:**
    - **Engine A — reference-based** (`identify/engine_a.py`): Exonerate
      `protein2genome` per gene (IR genes searched in both copies); rRNA via BLAST.
    - **Engine B — model-based** (`identify/engine_b.py`): CDS via 6-frame
-     translation → `hmmsearch`; tRNA via ARAGORN + BLAST; rRNA via BLAST.
-5. **Reconciliation** (`core/reconcile.py`) — bin (overlap) → adaptive confidence
-   → ORF validation → locus selection; one annotation set with flags + provenance.
+     translation → `hmmsearch`; tRNA via ARAGORN + tRNAscan-SE + BLAST; rRNA via BLAST.
+5. **Candidate selection** (`core/reconcile.py`, `--mode pooled`) — both engines'
+   candidates are pooled by gene name and one is kept per locus: Engine B's
+   coordinates when its ORF check passes, Engine A as a rescue otherwise, both
+   copies for an IR-duplicated gene. Agreement between the engines earns no score
+   bonus — an ablation found it bought nothing measurable. `--mode legacy`
+   restores the older cross-engine reconciliation.
 6. **Special cases** (`annotate/special_cases.py`) — CAU tRNA disambiguation,
-   *rps12* trans-splicing, short first exons, multi-exon splice refinement,
-   internal-stop QC.
+   *rps12* trans-splicing, short first exons, internal-stop QC.
+6b. **Boundary refinement** — multi-exon CDS splice sites; intron-free tRNA ends
+   from tRNAscan-SE (`--trna-mode`); the seven intron-bearing tRNA by glocal exon
+   placement (`--intron-mode`). This runs after the inventory is fixed, by design.
 7. **Output** (`output/writers.py`).
 
-See `docs/figures/Fig1_pipeline.*` and `Fig2_reconciliation.*` for schematics.
+<p align="center">
+  <img src="docs/figures/Fig1_pipeline.png" width="620"
+       alt="The Plastanno pipeline: read FASTA, detect the inverted repeat, find
+            closest relatives, run both engines, select one candidate per locus,
+            apply special cases, refine boundaries, write output.">
+</p>
+
+`docs/figures/Fig2_selection.*` shows the selection layer in detail.
 
 ## Installation
 
@@ -47,10 +64,14 @@ See `docs/figures/Fig1_pipeline.*` and `Fig2_reconciliation.*` for schematics.
 external tools and the helper shell scripts assume a Unix environment) — use
 **WSL2** as a workaround.
 
-Plastanno needs Python ≥ 3.9 with `biopython`, `pandas` and `matplotlib` (the
-last only for the circular map), plus four external tools on `PATH`: **BLAST+**,
-**Exonerate**, **HMMER** (`hmmsearch`) and **ARAGORN** (optionally
-**tRNAscan-SE** for the `--trnascan` option).
+Plastanno needs Python ≥ 3.9 with `biopython`, `pandas`, `numpy`, `scipy`,
+`platformdirs` and `matplotlib` (the last only for the circular map), plus
+**five** external tools on `PATH`: **BLAST+**, **Exonerate**, **HMMER**
+(`hmmsearch`), **ARAGORN** and **tRNAscan-SE**.
+
+> **tRNAscan-SE is required, not optional.** Since 3.0.0 the default
+> `--trna-mode hybrid` takes intron-free tRNA ends from it, and the run stops
+> before step 1 if it is not on `PATH`. `--trna-mode legacy` does not need it.
 
 **Prerequisite:** a working `conda`. We recommend
 [Miniforge](https://github.com/conda-forge/miniforge) (it defaults to the
@@ -71,11 +92,8 @@ conda activate plastanno
 plastanno fetch-db
 ```
 
-To add the optional tRNAscan-SE source (used only by the `--trnascan` option):
-
-```bash
-conda install -n plastanno -c conda-forge -c bioconda trnascan-se
-```
+The Bioconda package pulls in tRNAscan-SE along with everything else, so there
+is nothing extra to install.
 
 > List `conda-forge` before `bioconda` so it keeps the higher priority — this is
 > the channel order Bioconda requires; with `channel_priority strict` it also
@@ -220,8 +238,10 @@ Both are off by default, so default output is unchanged:
 # are tried first in Engine A, with automatic fallback to the built-in DB.
 python3 plastanno.py run genome.fasta -o out/ --reference close_relative.gb
 
-# Add tRNAscan-SE as an extra tRNA source (must be on PATH); contributes
-# intronless tRNAs alongside ARAGORN/BLAST.
+# Add tRNAscan-SE as an extra tRNA DETECTION source; contributes intronless
+# tRNAs alongside ARAGORN/BLAST. This is separate from --trna-mode hybrid (the
+# default), where tRNAscan-SE sets the BOUNDARIES of tRNA that were already
+# found; that one changes no locus, this one can add loci.
 python3 plastanno.py run genome.fasta -o out/ --trnascan
 ```
 
@@ -317,10 +337,18 @@ python3 scripts/benchmark/benchmark_gene_by_gene.py reference.gb predicted.gb --
 python3 scripts/benchmark/multi_genome_bench.py --n 120 --workers 16
 ```
 
-## Performance targets
+## Performance
 
-CDS Sn > 92% / Pr > 95%, rRNA Sn/Pr > 97%, tRNA Sn > 88% / Pr > 90%,
-runtime < 60 s per genome.
+Measured accuracy is not quoted here; see the note in the introduction. The
+design targets carried over from the predecessor tool are CDS Sn > 92% /
+Pr > 95%, rRNA Sn/Pr > 97%, tRNA Sn > 88% / Pr > 90%.
+
+**Runtime is a deliberate trade.** The original target was < 60 s per genome and
+the 3.0.0 defaults do not meet it: `--trna-mode hybrid` and `--intron-mode
+glocal` buy tRNA boundary accuracy at the cost of several times the runtime.
+Setting both to `legacy` returns roughly the old speed and the old boundaries.
+Exonerate does not scale with threads, so batch work is best parallelised across
+genomes rather than within one.
 
 ## Citation
 

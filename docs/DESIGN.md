@@ -1,5 +1,18 @@
 # Plastanno v2 Design Document
 
+> **Status.** This records the design intent carried over from v1, written
+> before the tool was built. It is kept as a record and is not a description of
+> 3.0.0 — for that, see `ARCHITECTURE.md`. Three items here were overtaken by
+> measurement:
+>
+> - the tiered tRNA database (genus > family > global) does not engage, because
+>   the taxonomy file it needs is not shipped; restoring it was tested and
+>   rejected;
+> - intron-bearing tRNA exon boundaries no longer come from the exon database by
+>   default, but from glocal placement against reference exons;
+> - the ML component was never built; `plastanno/ml/` is still an empty
+>   placeholder.
+
 ## Lessons from v1
 
 ### Pipeline design
