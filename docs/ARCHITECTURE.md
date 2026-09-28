@@ -81,13 +81,19 @@ Counts are from the published 3.0.0 bundle.
     database/
     ├── blast_db/           genus representatives (BLAST nucleotide DB)
     ├── protein_db/         per-gene amino-acid sequences for Exonerate (403 files)
-    ├── hmm_db/             profile HMMs (168 profiles in all_profiles.hmm)
+    ├── hmm_db/             profile HMMs for 88 genes
     ├── trna_db/            tiered tRNA (genus / family / global)
     ├── exon_db/            exon sequences for intron-bearing tRNA
     ├── rrna_db/            full-length rRNA
     ├── boundary_db/        exon panel and length templates
     ├── exon_templates.json
     └── gene_catalog.json   per-gene region, n_exons, expected_len
+
+`all_profiles.hmm` holds **168 records for those 88 genes**: 80 of them appear
+twice, byte-identical, and the 8 added in 3.0.0 appear once. Quote the gene
+count, not the record count — an earlier version of this file said "168
+profiles", which reads as 168 genes. hmmsearch therefore scans 80 profiles twice
+on every genome; deduplicating the file is a free saving nobody has taken.
 
 Two caveats that have each cost debugging time:
 
