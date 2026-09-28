@@ -271,12 +271,10 @@ def build_gene_catalog(df, out_path):
     log("\n[4/4] Building gene catalog...")
 
     # Known regions from v1 experience
-    IR_GENES = {
-        "rpl2","rpl23","ndhB","rps7","ycf2",
-        "orf70","trnI-CAU","trnI-GAU","trnA-UGC",
-        "trnR-ACG","trnN-GUU","trnL-CAA","trnV-GAC",
-        "rrn16","rrn23","rrn4.5","rrn5",
-    }
+    # One definition, owned by plastanno.core.ir_genes. Contents unchanged --
+    # this variant carries orf70, which the pipeline's set does not, and the
+    # difference is preserved because the database is frozen.
+    from plastanno.core.ir_genes import BUILD_CATALOG_IR_GENES as IR_GENES
     SSC_GENES = {
         "ndhF","rpl32","ccsA","ndhD","psaC","ndhE",
         "ndhG","ndhI","ndhA","ndhH","rps15","ycf1",
