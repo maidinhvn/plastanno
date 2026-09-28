@@ -45,8 +45,14 @@ A 7-step pipeline (`plastanno/pipeline.py`):
 6. **Special cases** (`annotate/special_cases.py`) — CAU tRNA disambiguation,
    *rps12* trans-splicing, short first exons, internal-stop QC.
 6b. **Boundary refinement** — multi-exon CDS splice sites; intron-free tRNA ends
-   from tRNAscan-SE (`--trna-mode`); the seven intron-bearing tRNA by glocal exon
-   placement (`--intron-mode`). This runs after the inventory is fixed, by design.
+   from tRNAscan-SE (`--trna-mode`); the intron call at intron-bearing tRNA loci
+   from ARAGORN's own structural model rather than the exon database
+   (`--exon-mode`); the seven intron-bearing tRNA by glocal exon placement
+   (`--intron-mode`). This runs after the inventory is fixed, by design.
+
+   Each of the four has a `legacy` setting that restores the 2.0.5 behaviour:
+   `--mode`, `--exon-mode`, `--trna-mode`, `--intron-mode`. `plastanno run
+   --help` gives the measurement behind each default.
 7. **Output** (`output/writers.py`).
 
 <p align="center">
