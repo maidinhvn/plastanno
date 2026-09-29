@@ -15,7 +15,9 @@ same strand are collapsed to a single best representative, so a gene detected as
 several overlapping fragments is reported once. Spatially separate copies (the
 two IR copies of a gene) do not overlap and are preserved.
 """
+import copy
 import hashlib
+from collections import Counter
 from typing import List, Dict, Tuple
 from .feature import Feature
 from .ir_genes import LEGACY_IR_CONFLICT_GENES  # legacy path only;
@@ -203,6 +205,13 @@ SPECIAL_START_CODONS = {
     "ycf1":  ["GTG", "ACG"],
 }
 
+def _internal_stops(seq: str) -> int:
+    """In-frame stop codons strictly inside a coding sequence (first and last
+    codons excluded). The one definition validate_orf and the rescue gate share."""
+    return sum(1 for i in range(3, len(seq) - 3, 3)
+               if seq[i:i + 3].upper() in ("TAA", "TAG", "TGA"))
+
+
 def validate_orf(feat: Feature, genome_seq: str, gene_catalog: dict) -> float:
     """Compute S_orf in [0,1]. Non-CDS features get a structural prior of 0.8."""
     if feat.gene_type != "CDS":
@@ -222,9 +231,7 @@ def validate_orf(feat: Feature, genome_seq: str, gene_catalog: dict) -> float:
         score += 0.25
     if seq[-3:].upper() in ["TAA", "TAG", "TGA"]:
         score += 0.25
-    internal = sum(1 for i in range(3, len(seq) - 3, 3)
-                   if seq[i:i + 3].upper() in ["TAA", "TAG", "TGA"])
-    if internal == 0:
+    if _internal_stops(seq) == 0:
         score += 0.25
     exp_len = gene_catalog.get(feat.gene_name, {}).get("expected_len", 0)
     if exp_len > 0:
@@ -568,26 +575,134 @@ def reconcile_pooled(
     NOTE the IR set: this uses the complete IR_DUPLICATED_GENES, not the
     eight-gene subset `reconcile()` is frozen on. See core.ir_genes.
     """
-    out = pooled_candidates(engine_a, engine_b, genome_seq, gene_catalog, orf_pass)
+    fallbacks = {}
+    out = pooled_candidates(engine_a, engine_b, genome_seq, gene_catalog, orf_pass,
+                            fallbacks=fallbacks)
 
     for f in out:
-        f.s_overlap = 0.0                      # no cross-engine agreement term
-        f.s_orf = validate_orf(f, genome_seq, gene_catalog)
-        if f.gene_type != "CDS":
-            f.s_model = _effective_detection(f)
-            avail = {"model", "orf"}
-        else:
-            avail = {"ref", "orf"} if f.s_ref > 0 else {"model", "orf"}
-        f.compute_confidence(avail)
+        _score_pooled(f, genome_seq, gene_catalog)
 
+    survivors = _select_pooled(out, gene_catalog, ir_boundaries, genome_seq)
+    return survivors + _rescue(out, survivors, fallbacks, genome_seq,
+                               gene_catalog, ir_boundaries)
+
+
+def _score_pooled(f, genome_seq, gene_catalog):
+    """Single-engine scoring, identical for every pooled candidate."""
+    f.s_overlap = 0.0                          # no cross-engine agreement term
+    f.s_orf = validate_orf(f, genome_seq, gene_catalog)
+    if f.gene_type != "CDS":
+        f.s_model = _effective_detection(f)
+        avail = {"model", "orf"}
+    else:
+        avail = {"ref", "orf"} if f.s_ref > 0 else {"model", "orf"}
+    f.compute_confidence(avail)
+
+
+def _select_pooled(feats, gene_catalog, ir_boundaries, genome_seq):
     try:
-        return _select(out, gene_catalog, ir_boundaries, len(genome_seq))
+        return _select(feats, gene_catalog, ir_boundaries, len(genome_seq))
     except TypeError:
-        return _select(out, gene_catalog, ir_boundaries)
+        return _select(feats, gene_catalog, ir_boundaries)
+
+
+def _feature_key(f):
+    """What makes two emitted features the same: type, name, strand, parts."""
+    parts = tuple(tuple(x) for x in f.exons) if f.exons else ((f.start, f.end),)
+    return (f.gene_type, f.gene_name, f.strand, parts)
+
+
+def _rescue(out, survivors, fallbacks, genome_seq, gene_catalog, ir_boundaries):
+    """Recover a locus whose preferred candidate did not survive `_select`.
+
+    `pooled_candidates` keeps one candidate of each AB or conflict pair. `_select`
+    applies its length filter AFTER the per-cluster pick, so when the kept
+    candidate is a fragment it is deleted with nothing left to fall back to, and
+    the locus vanishes although a complete call existed. Measured on 30
+    development genomes: 6 of 2222 discarded Engine A calls left their gene
+    absent from the output; on another 60, ndhA was absent from 21.
+
+    An earlier fix put the discarded candidate into `_select`'s input. On the 14
+    development genomes of its sample it rescued 5 loci and MOVED 41, failing on
+    every one, because any added candidate
+    changes what the selector decides — a new rank key reorders unrelated
+    clusters, and union-find can bridge two clusters through the newcomer.
+
+    So nothing is added to `_select`'s input, and its survivors are exactly what
+    they were. Only afterwards is a fallback considered, and only if the candidate
+    it lost to is gone. Each is then PROBED: `_select` itself is run on deep copies
+    of the survivors plus the candidate, and the candidate is accepted only if the
+    probe returns every survivor unchanged and keeps the candidate. The judge is
+    the real selector — its ycf1 exemption, its rps12 passthrough, its weak-copy
+    and IR rules all apply without being re-implemented here — and the copies mean
+    a probe cannot touch a real survivor's notes.
+
+    This guarantees the output of reconcile_pooled is a superset of what it was.
+    Whether later steps keep that property is a separate, empirical question.
+    """
+    if not fallbacks:
+        return []
+    alive = {id(f) for f in survivors}
+    cands = [fallbacks[id(k)] for k in out
+             if id(k) in fallbacks and id(k) not in alive]
+    if not cands:
+        return []
+    for c in cands:
+        _score_pooled(c, genome_seq, gene_catalog)
+    # rescue candidates are resolved against each other by the same selector
+    cands = _select_pooled(cands, gene_catalog, ir_boundaries, genome_seq)
+    cands.sort(key=lambda f: (f.gene_name or "", f.start, f.end))
+
+    accepted = []
+    for c in cands:
+        base = survivors + accepted
+        probe = [copy.deepcopy(x) for x in base] + [copy.deepcopy(c)]
+        got = Counter(_feature_key(x) for x in
+                      _select_pooled(probe, gene_catalog, ir_boundaries, genome_seq))
+        want = Counter(_feature_key(x) for x in base)
+        want[_feature_key(c)] += 1
+        if got == want:
+            c.notes.append(RESCUE_NOTE + " -- the candidate preferred over this "
+                           "one did not survive selection, and the locus was "
+                           "otherwise empty")
+            accepted.append(c)
+    return accepted
+
+
+RESCUE_NOTE = "pooled: rescued"
+
+
+def revoke_implausible_rescues(annotations, genome_seq):
+    """Drop a rescued call that the final QC finds implausible as a gene.
+
+    Returns (kept, revoked). Only calls `_rescue` added are candidates; every
+    other feature passes untouched, whatever its flag, so the output stays a
+    superset of the unrescued one.
+
+    Why here, after finalize_qc, and not at rescue time: ungated, 4 of 13 rescues
+    on 44 dev genomes were calls the reference does not annotate as CDS (three
+    infA remnants) and they cancelled the gain. A gate at rescue time removed
+    them, but it also removed three of the six rescues that matched the reference
+    -- two ndhA with exact outer boundaries and an exact ndhF -- whose raw
+    candidates are frame-broken until splice refinement and ORF re-derivation
+    repair them (parked/gated_rescue/). The final QC sees the repaired call:
+    there, NEEDS_REVIEW or an in-frame internal stop separated exactly the three
+    infA remnants from the rest.
+    """
+    L = len(genome_seq) or None
+    kept, revoked = [], []
+    for a in annotations:
+        if (a.gene_type == "CDS" and any(n.startswith(RESCUE_NOTE) for n in a.notes)
+                and (a.flag == "NEEDS_REVIEW"
+                     or _internal_stops(_coords.extract(genome_seq, a, L)) > 0)):
+            revoked.append(a)
+        else:
+            kept.append(a)
+    return kept, revoked
 
 
 def pooled_candidates(engine_a, engine_b, genome_seq, gene_catalog,
-                      orf_pass=POOLED_ORF_PASS):
+                      orf_pass=POOLED_ORF_PASS, fallbacks=None):
     """The B-primary / A-rescue selection rule, BEFORE scoring and _select.
 
     Split out so the rule can be tested on its own. Downstream, `_select`
@@ -607,6 +722,8 @@ def pooled_candidates(engine_a, engine_b, genome_seq, gene_catalog,
         keep.notes.append("pooled: engine %s model kept (orf A=%.2f B=%.2f)"
                           % ("B" if keep is fb else "A", oa, ob))
         out.append(keep)
+        if fallbacks is not None:
+            fallbacks[id(keep)] = fa if keep is fb else fb
 
     for fa in bins["A_only"]:
         fa.notes.append("pooled: reference-only rescue")
@@ -634,6 +751,8 @@ def pooled_candidates(engine_a, engine_b, genome_seq, gene_catalog,
         keep.notes.append("pooled: same-locus conflict, engine %s kept (%s)"
                           % ("B" if keep is fb else "A", reason))
         out.append(keep)
+        if fallbacks is not None:
+            fallbacks[id(keep)] = fa if keep is fb else fb
 
     return out
 

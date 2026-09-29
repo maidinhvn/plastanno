@@ -308,6 +308,11 @@ def run(
     # so the summary described a different state from the files on disk.
     from .core.finalize import finalize_qc, assign_cds_products
     finalize_qc(annotations, genome_seq)
+    from .core.reconcile import revoke_implausible_rescues
+    annotations, _revoked = revoke_implausible_rescues(annotations, genome_seq)
+    if _revoked:
+        print("      Rescued calls revoked by the final QC: %d (%s)"
+              % (len(_revoked), ", ".join(a.gene_name for a in _revoked)))
     _named, _unnamed = assign_cds_products(annotations, gene_catalog)
     if _unnamed:
         print(f"      CDS without a protein name in the catalog: {_unnamed} "
