@@ -369,8 +369,9 @@
     "region": "LSC",
     "n_exons": 1,
     "short_first_exon": 0,
-    "synonym_of": "pbf1",
-    "product": "photosystem biogenesis factor 1"
+    "synonym_of": null,
+    "product": "photosystem II protein N",
+    "expected_len": 132
   },
   "psbT": {
     "type": "CDS",
@@ -11194,7 +11195,7 @@
     "region": "LSC",
     "n_exons": 1,
     "short_first_exon": 0,
-    "synonym_of": null,
+    "synonym_of": "psbN",
     "product": "photosystem biogenesis factor 1",
     "expected_len": 132
   },
@@ -11651,7 +11652,7 @@
     "region": "LSC",
     "n_exons": 1,
     "short_first_exon": 0,
-    "synonym_of": null,
+    "synonym_of": "ycf3",
     "product": "photosystem I assembly factor I"
   },
   "pafII": {
@@ -11659,7 +11660,7 @@
     "region": "LSC",
     "n_exons": 1,
     "short_first_exon": 0,
-    "synonym_of": null,
+    "synonym_of": "ycf4",
     "product": "photosystem I assembly factor II"
   },
   "trnG-TCC": {

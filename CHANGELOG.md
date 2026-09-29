@@ -30,6 +30,16 @@ never used during development.
 
 ### Changed
 
+- **Gene names follow the majority usage in GenBank plastomes: psbN, ycf3, ycf4,
+  clpP.** The synonym table mapped psbN to pbf1, a newer name that 88-97% of
+  GenBank plastome records do not use (23% of those submitted in 2024 do). It now
+  maps pbf1 to psbN, and pafI and pafII -- which the 3.0.0 database carries as
+  profiles of their own beside ycf3 and ycf4 -- to ycf3 and ycf4; clpP1 to clpP is
+  unchanged. The rename happens where it always did, after reconciliation, so no
+  coordinate moves: on 30 development genomes every feature was identical once
+  the old names were mapped. A renamed call that overlaps an existing call of the
+  same gene is dropped rather than written twice. Renaming before reconciliation
+  was tried and rejected: it changed which call won, not only its name.
 - **Documentation brought up to 3.0.0.** `README.md` still described the
   pre-3.0.0 architecture and listed tRNAscan-SE as optional, which it is not
   under the default `--trna-mode hybrid`; `numpy`, `scipy` and `platformdirs`

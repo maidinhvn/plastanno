@@ -29,7 +29,7 @@
 - rRNA: 25000bp binning to avoid duplicates
 
 ### Gene handling
-- Synonyms: clpP1→clpP, psbN→pbf1
+- Synonyms, applied after reconciliation, to the majority GenBank names: clpP1→clpP, pbf1→psbN, pafI→ycf3, pafII→ycf4
 - CAU disambiguation: trnI-CAU (IR) vs trnM-CAU (LSC)
 - Multi-exon CDS: special cases for petB(6bp), petD(9bp)
 - Trans-spliced: rps12 (3 exons across genome)

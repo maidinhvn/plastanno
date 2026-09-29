@@ -24,13 +24,41 @@ from ..core import ambiguity as _ambiguity
 
 
 # ── Gene synonyms ─────────────────────────────────────────────────────────────
+# Output names follow the MAJORITY usage in GenBank plastomes: psbN, ycf3, ycf4
+# and clpP, not the newer pbf1, pafI, pafII and clpP1 (first seen 2014-15, used
+# by 23-28% of records submitted in 2024; parked/arbiter_oracle/
+# gene_name_timeline.txt). This table once mapped psbN -> pbf1, the minority name.
+#
+# Applied here, in step 6 only. Applying it to the engines' calls before
+# reconciliation was tried and rejected (parked/gene_name_policy/RESULT.md): it
+# is not a rename -- Engine A's pbf1 then pairs with Engine B's psbN, and the pafI
+# and pafII profiles' calls compete inside the ycf3 and ycf4 clusters -- and on
+# 30 dev genomes it moved coordinates in 8 and lost an exact psbN.
 SYNONYMS = {
     "clpP1" : "clpP",
     "clpP2" : "clpP",
-    "psbN"  : "pbf1",
+    "pbf1"  : "psbN",
+    "pafI"  : "ycf3",
+    "pafII" : "ycf4",
     "orf70a": "orf70",
     "orf70b": "orf70",
 }
+
+
+def apply_synonyms(features):
+    """Rename in place to the SYNONYMS target; return how many were renamed.
+
+    The name the engine used is kept in the feature's notes, so the provenance
+    written to /note still says where the call came from.
+    """
+    n = 0
+    for f in features:
+        new = SYNONYMS.get(f.gene_name)
+        if new:
+            f.notes.append("named %s; the engine called it %s" % (new, f.gene_name))
+            f.gene_name = new
+            n += 1
+    return n
 
 # ── CAU disambiguation (trnfM-CAU / trnM-CAU / trnI-CAU) ──────────────────────
 # All three share anticodon CAU but are distinct genes with distinct sequences
@@ -97,12 +125,33 @@ def normalize_names(annotations, ir_boundaries,
                     genome_seq=None, trna_db_dir=None):
     """Apply gene synonyms and CAU disambiguation."""
     changes = []
+    renamed = []
     for ann in annotations:
-        # Apply synonyms
-        if ann.gene_name in SYNONYMS:
-            old = ann.gene_name
-            ann.gene_name = SYNONYMS[old]
+        old = ann.gene_name
+        if apply_synonyms([ann]):
+            renamed.append(ann)
             changes.append(f"Renamed {old} → {ann.gene_name}")
+
+    # A renamed call overlapping a call that already carries the target name is a
+    # second call of one gene -- a pafI profile hit beside the ycf3 call, or
+    # Engine A's pbf1 beside Engine B's psbN, which never paired under two names.
+    # Keep the call that already had the majority name.
+    if renamed:
+        _glen = len(genome_seq or "") or None
+        rid = {id(a) for a in renamed}
+        drop = set()
+        for r in renamed:
+            for o in annotations:
+                if (id(o) not in rid and o.gene_name == r.gene_name
+                        and o.gene_type == r.gene_type
+                        and _coords.overlap_bp(r, o, _glen) > 0):
+                    drop.add(id(r))
+                    changes.append(f"Dropped a renamed {r.gene_name} call at "
+                                   f"{r.start}-{r.end}: it overlaps an existing "
+                                   f"{o.gene_name} call")
+                    break
+        if drop:
+            annotations = [a for a in annotations if id(a) not in drop]
 
     # CAU disambiguation — BLAST best-hit naming, positional fallback
     cau_feats = [a for a in annotations
