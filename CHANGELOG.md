@@ -8,6 +8,16 @@ never used during development.
 
 ### Fixed
 
+- **The pooled rule could drop a whole gene** when the call it kept was a
+  fragment: the selector's length filter then deleted it, although the other
+  engine had a complete call. ndhA was missing from 11 of 56 development genomes
+  whose reference has it. The discarded call is now kept aside and tried if the
+  kept one did not survive, in a probe of the real selector that must return
+  every other feature unchanged; after the final QC, a rescued call flagged
+  NEEDS_REVIEW or containing an in-frame stop is withdrawn. On 60 development
+  genomes not seen before: no feature lost or moved, CDS F1 at +/-60 bp up
+  0.138 points (15 genes gained, 2 wrong additions), ndhA missing from 1
+  genome instead of 11. Exact-coordinate F1 is unchanged.
 - **Two tests failed wherever the database was not unpacked in the working
   directory.** `test_ir_lacking_genome.py` and `test_relatives_ordering.py` passed
   the literal path `database/protein_db`, so in a fresh clone, a worktree, or after
