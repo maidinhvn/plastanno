@@ -133,7 +133,7 @@ is no self-update command:
 conda activate plastanno
 conda update -c conda-forge -c bioconda plastanno     # to the newest release
 # or pin an exact release:
-conda install -c conda-forge -c bioconda plastanno=2.0.4
+conda install -c conda-forge -c bioconda plastanno=3.0.1
 ```
 
 Check what you are actually running (report this when asking for support, and

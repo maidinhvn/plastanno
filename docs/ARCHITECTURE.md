@@ -1,6 +1,6 @@
 # Plastanno architecture
 
-Current as of 3.0.0. Where this document and the code disagree, the code is
+Current as of 3.0.1. Where this document and the code disagree, the code is
 right — the previous version of this file described the pre-3.0.0 scoring and
 was three months stale.
 
@@ -66,6 +66,16 @@ overlap → duplicate fragments; different names + reciprocal overlap > 0.5 and
 length ratio > 0.5 → paralog cross-hit), keeps the best per cluster, and drops
 CDS whose spliced length is below 0.6× expected. `rps12` passes through untouched
 and is handled in step 6.
+
+**A dropped locus is rescued (3.0.1).** When both engines found a gene, the call
+not kept is held aside. If the kept call does not survive `_select` -- typically a
+fragment removed by the length filter, while the other engine had the complete
+gene -- the held-aside call is tried: `_select` is re-run on copies of the
+survivors plus the candidate, and the candidate is added only if every survivor
+comes back unchanged, so nothing that would have been output can move or vanish.
+After the final QC, a rescued CDS that is flagged NEEDS_REVIEW or contains an
+in-frame stop is withdrawn (`reconcile.revoke_implausible_rescues`). On 60
+development genomes not used before, ndhA went from missing in 11 genomes to 1.
 
 ## Provenance
 

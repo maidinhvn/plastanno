@@ -6,6 +6,16 @@ never used during development.
 
 ## [Unreleased]
 
+## [3.0.1] — 2026-09-29
+
+A patch release: the same commands and options, and the same reference database
+(no `fetch-db` needed after upgrading), but annotations change where 3.0.0 was
+wrong or incomplete. Gene names follow the majority usage in GenBank plastomes;
+every CDS carries its protein name as `/product`; and a gene the pooled rule used
+to drop -- most often ndhA -- is rescued. Each change was validated on development
+genomes against a criterion fixed before the run; the locus rescue on 60 genomes
+not used before.
+
 ### Fixed
 
 - **The pooled rule could drop a whole gene** when the call it kept was a

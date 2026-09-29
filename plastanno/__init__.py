@@ -9,4 +9,4 @@ setuptools resolves the name to the script — the build then fails with
 made ``--version`` report an old release while the code was newer.
 """
 
-__version__ = "3.0.0"
+__version__ = "3.0.1"
