@@ -23,9 +23,6 @@ enough:
                       location. Order is the whole point, and for a trans-spliced
                       gene the strands differ between parts.
 
-    locus_span        (lo, hi) on the linear coordinate axis, plus a wrapped flag.
-                      For deciding whether two calls describe the same place.
-
 Distances near the origin must use `circular_distance`: 2 bp before position 1 and
 1 bp after it are 3 bases apart, not 151,759.
 """
@@ -172,16 +169,6 @@ def biological_exon_count(arcs, genome_len=None) -> int:
     return len(biological_exon_runs(arcs, genome_len))
 
 
-def locus_span(feat, genome_len=None):
-    """((lo, hi), wrapped) on the linear axis — where the feature sits, roughly."""
-    if is_wrapped(feat):
-        return (feat.start, feat.end), True
-    arcs = occupied_arcs(feat, genome_len)
-    if not arcs:
-        return (feat.start, feat.end), False
-    return (arcs[0][0], arcs[-1][1]), False
-
-
 def _arcs_bp(arcs) -> int:
     return sum(e - s for s, e in arcs)
 
@@ -274,10 +261,6 @@ def shift_feature(feat, delta, genome_len):
         out.exons = sorted(joined)                    # order re-derived from strand
         out.exon_strands = []
     return out
-
-
-def _touching(a, b) -> bool:
-    return a[1] == b[0] or b[1] == a[0]
 
 
 def circular_distance(x, y, genome_len) -> int:

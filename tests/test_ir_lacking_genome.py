@@ -33,6 +33,13 @@ from plastanno.core.feature import Feature              # noqa: E402
 from plastanno.identify import ir_detector as IRD       # noqa: E402
 import plastanno.annotate.special_cases as SC           # noqa: E402
 import plastanno.identify.engine_a as EA                # noqa: E402
+from plastanno import paths                             # noqa: E402
+
+# The database as the tool itself finds it. A literal "database/protein_db" was
+# resolved against the working directory, so the rps12 case failed wherever the
+# database was not unpacked there -- a fresh clone, a worktree, a `fetch-db`
+# install -- by skipping the reconstruction it tests, not by saying why.
+PROTEIN_DB = str(paths.db_root() / "protein_db")
 
 RUN = [0]
 FAIL = []
@@ -108,21 +115,24 @@ def fake_region(genome_seq, protein_seq, gene_name, prot_acc,
                  strand=1, exons=[(92, 92 + 301)], engine="A", s_ref=0.880)
     return [hi, lo]
 
-SC._reconstruct_rps12_copy = fake_recon
-_EA_mod.run_exonerate_region = fake_region
-try:
-    SC.handle_rps12([frag_lo, frag_hi], GENOME, NO_IR, protein_db="database/protein_db")
-finally:
-    SC._reconstruct_rps12_copy = real_recon
+if os.path.isdir(PROTEIN_DB):
+    SC._reconstruct_rps12_copy = fake_recon
+    _EA_mod.run_exonerate_region = fake_region
+    try:
+        SC.handle_rps12([frag_lo, frag_hi], GENOME, NO_IR, protein_db=PROTEIN_DB)
+    finally:
+        SC._reconstruct_rps12_copy = real_recon
 
-check("the reconstruction IS attempted with no IR (defect 2)", len(calls) > 0, True)
-if calls:
-    check("exon1 is the Met-starting fragment, not the lowest coordinate (defect 1)",
-          calls[0]["exon1"][0], 66_686)
-    e1s, e1e = calls[0]["exon1"][0], calls[0]["exon1"][1]
-    check("the anchor is NOT inside exon1 (defect 3)",
-          not (e1s <= calls[0]["anchor"] < e1e), True)
-    check("the anchor is the 3' block", calls[0]["anchor"], 92)
+    check("the reconstruction IS attempted with no IR (defect 2)", len(calls) > 0, True)
+    if calls:
+        check("exon1 is the Met-starting fragment, not the lowest coordinate (defect 1)",
+              calls[0]["exon1"][0], 66_686)
+        e1s, e1e = calls[0]["exon1"][0], calls[0]["exon1"][1]
+        check("the anchor is NOT inside exon1 (defect 3)",
+              not (e1s <= calls[0]["anchor"] < e1e), True)
+        check("the anchor is the 3' block", calls[0]["anchor"], 92)
+else:
+    print("  SKIPPED: the rps12 cases need the downloaded database (%s)" % PROTEIN_DB)
 
 print("--- 5b. an IR question is ANSWERED with no IR, not abandoned ---")
 # The distinction that made one of three identical-looking guards a bug. This one

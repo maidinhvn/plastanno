@@ -481,31 +481,6 @@ def run_aragorn(genome_seq, genome_len):
 
     return features
 
-def _normalize_trna_name(raw):
-    """Convert ARAGORN tRNA names to standard format."""
-    ANTICODON_MAP = {
-        "Ala":"A","Arg":"R","Asn":"N","Asp":"D",
-        "Cys":"C","Gln":"Q","Glu":"E","Gly":"G",
-        "His":"H","Ile":"I","Leu":"L","Lys":"K",
-        "Met":"M","Phe":"F","Pro":"P","Ser":"S",
-        "Thr":"T","Trp":"W","Tyr":"Y","Val":"V",
-        "fMet":"fM","Sec":"Sec",
-    }
-    # Extract anticodon from parentheses
-    m = re.search(r'\(([A-Za-z]{3})\)', raw)
-    if not m: return None
-    anticodon = m.group(1).upper().replace("T","U")
-
-    # Extract amino acid
-    m2 = re.search(r'tRNA-([A-Za-z]+)', raw)
-    if not m2: return None
-    aa = m2.group(1)
-
-    # Map 3-letter to 1-letter
-    aa1 = ANTICODON_MAP.get(aa, aa[0].upper())
-    return f"trn{aa1}-{anticodon}"
-
-
 def blast_trna(genome_seq, trna_db, min_length=60,
                threads=4):
     """

@@ -73,7 +73,3 @@ def resolve(candidates, evidence, digest, model=None):
     orderable = len(set(digests)) == len(digests)
     return distinct[0], distinct[1:], amb, orderable
 
-
-def describe(alternatives, as_dict):
-    """The alternatives in the form Feature.alternatives expects."""
-    return [as_dict(a) for a in alternatives]

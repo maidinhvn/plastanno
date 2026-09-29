@@ -24,6 +24,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from Bio.Seq import Seq                              # noqa: E402
 from Bio.SeqRecord import SeqRecord                  # noqa: E402
 import plastanno.identify.engine_a as EA             # noqa: E402
+from plastanno import paths as _paths               # noqa: E402
+
+PROTEIN_DB = str(_paths.db_root() / "protein_db")
 
 RUN = [0]
 FAIL = []
@@ -71,7 +74,7 @@ def run_with(relatives, db=DB, cap_seen=None):
     try:
         EA.run_exonerate_gene(
             genome_seq="A" * 5000, gene_name=GENE,
-            protein_db="database/protein_db", ir_boundaries={"LSC": (0, 5000)},
+            protein_db=PROTEIN_DB, ir_boundaries={"LSC": (0, 5000)},
             gene_catalog=CATALOG, threads=1, relatives=relatives)
     finally:
         EA.run_exonerate_region = real_region
@@ -79,12 +82,13 @@ def run_with(relatives, db=DB, cap_seen=None):
     return seen
 
 
-# run_exonerate_gene below is given protein_db="database/protein_db", which it
-# resolves against the working directory, so the check has to use the same form.
-if not os.path.isdir("database/protein_db"):
+# The database as the tool finds it (plastanno.paths.db_root), not a path relative
+# to the working directory: `plastanno fetch-db` installs it under the user data
+# directory, so a literal working-directory path skipped even after the command
+# this message recommends.
+if not os.path.isdir(PROTEIN_DB):
     print()
-    print("  SKIPPED: this file needs the downloaded database "
-          "(database/protein_db).")
+    print("  SKIPPED: this file needs the downloaded database (%s)." % PROTEIN_DB)
     print("           Run `plastanno fetch-db` or "
           "`bash scripts/get_database.sh` first.")
     print()

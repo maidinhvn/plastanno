@@ -60,11 +60,6 @@ ALT_COLUMNS = ["kept_gene", "kept_type", "kept_strand", "kept_start", "kept_end"
                "alt_exons", "alt_wrapped", "alt_score", "distance_bp"]
 
 
-def _spliced_len(ann, genome_len=None):
-    """Total exon length of a feature (its coding length, introns excluded)."""
-    return _coords.spliced_length(ann, genome_len)
-
-
 def _exon_parts(ann, genome_len=None):
     """Exons of a feature in transcript order, each with its own strand.
 
@@ -748,15 +743,12 @@ def write_all(annotations, genome_seq, accession,
     if not no_plot:
         try:
             from Bio import SeqIO as _SeqIO
-            try:
-                # primary: in-package module (works after pip/conda install)
-                from plastanno.viz import plastome_circular_map as _pcm
-            except Exception:
-                # dev fallback: load from the source-tree scripts/viz copy
-                import importlib.util
-                _mp = Path(__file__).resolve().parents[2] / "scripts" / "viz" / "plastome_circular_map.py"
-                _spec = importlib.util.spec_from_file_location("_pcm", _mp)
-                _pcm = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(_pcm)
+            # The in-package module only. A fallback used to load
+            # scripts/viz/plastome_circular_map.py on ANY error here -- a stale copy
+            # that lacked the title-escaping fix -- so a broken package module would
+            # have been replaced by old code without a word. A failure now skips
+            # the map with the message below.
+            from plastanno.viz import plastome_circular_map as _pcm
             _rec = next(_SeqIO.parse(str(gb_path), "genbank"))
             _ir = _pcm.ir_from_blast(str(_rec.seq).upper()) or _pcm.ir_from_annotation(_rec)
             # Label the map with the real taxon; the generic placeholder is no more

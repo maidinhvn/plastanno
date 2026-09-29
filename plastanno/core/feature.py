@@ -6,12 +6,6 @@ from dataclasses import dataclass, field
 from typing import List, Tuple, Optional
 
 @dataclass
-class Exon:
-    start  : int
-    end    : int
-    strand : int  # 1 or -1
-
-@dataclass
 class Feature:
     """Single annotated gene with full provenance."""
 

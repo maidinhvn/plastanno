@@ -52,7 +52,8 @@ def cmd_run(args):
     output = args.output or "plastanno_output"
 
     print("=" * 60)
-    print("  Plastanno v2.0 — Plastome Annotation Tool")
+    from plastanno import __version__
+    print(f"  Plastanno {__version__} — Plastome Annotation Tool")
     print("=" * 60)
     print(f"  Input  : {args.input}")
     print(f"  Output : {output}")

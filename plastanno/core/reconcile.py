@@ -26,12 +26,6 @@ from . import ambiguity as _ambiguity
 
 # ── Matching ──────────────────────────────────────────────────────────────────
 
-def jaccard_overlap(a: Feature, b: Feature, genome_len: int = None) -> float:
-    """Jaccard overlap of two features. See core.coords for why this cannot be
-    computed from start and end: a feature crossing the origin has start > end."""
-    return _coords.jaccard(a, b, genome_len)
-
-
 def _feature_key(f):
     """An ordering that depends only on what the feature IS, never on the order the
     engine happened to emit it in. Sorting by this before building the assignment

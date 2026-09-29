@@ -66,10 +66,6 @@ class TRNAIdentity:
     role: str = None            #: INITIATOR / ELONGATOR -- methionine only
     status: str = UNRESOLVED
 
-    def same_family(self, other):
-        return (self.family is not None and other.family is not None
-                and self.family == other.family)
-
     def disagrees_with(self, other):
         """True only where BOTH sides resolve an axis and the values differ."""
         for a in ("family", "anticodon", "role"):

@@ -8,6 +8,15 @@ never used during development.
 
 ### Fixed
 
+- **Two tests failed wherever the database was not unpacked in the working
+  directory.** `test_ir_lacking_genome.py` and `test_relatives_ordering.py` passed
+  the literal path `database/protein_db`, so in a fresh clone, a worktree, or after
+  `plastanno fetch-db` (which installs under the user data directory) the first
+  failed a check and the second skipped everything -- and told the user to run
+  the very command that could not help. Both now find the database as the tool
+  does, through `plastanno.paths.db_root()`.
+- **The start-up banner said "Plastanno v2.0".** It now prints the installed
+  version.
 - **A CDS carried its gene symbol as /product.** Every CDS but rps12 was written
   as, for example, `/product="psbA"` rather than "photosystem II protein D1", in
   the `.gb`, the `.gff3` and the `.tbl` meant for NCBI submission: 97.7% of CDS,
@@ -68,6 +77,20 @@ never used during development.
   removed for the reasons above — `Fig7` asserted a leakage-free evaluation set
   that was not leakage-free.
 - CI installs the dependencies 3.0.0 actually needs, and runs the test suite.
+
+### Removed
+
+- **Dead code, found by a static and a traced audit** (`parked/dead_code/FINDINGS.md`
+  in the development repository): eight definitions referenced nowhere and never
+  executed (`coords.locus_span`, `coords._touching`, `feature.Exon`,
+  `reconcile.jaccard_overlap`, `TRNAIdentity.same_family`,
+  `engine_b._normalize_trna_name`, `ambiguity.describe`, `writers._spliced_len`);
+  the empty `plastanno/ml` and `plastanno/utils` packages; and
+  `scripts/viz/plastome_circular_map.py`, a copy of the package's map module that
+  had fallen behind it (it lacked the title-escaping fix). The writer used to load
+  that copy on any error importing the package module, which would have replaced
+  a broken module with old code silently; it now loads the package module only,
+  and a failure skips the map with a message. No output changes.
 
 ## [3.0.0] — 2026-09-26
 
