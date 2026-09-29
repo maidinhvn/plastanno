@@ -20,14 +20,14 @@ not used before.
 
 - **The pooled rule could drop a whole gene** when the call it kept was a
   fragment: the selector's length filter then deleted it, although the other
-  engine had a complete call. ndhA was missing from 11 of 56 development genomes
-  whose reference has it. The discarded call is now kept aside and tried if the
-  kept one did not survive, in a probe of the real selector that must return
-  every other feature unchanged; after the final QC, a rescued call flagged
-  NEEDS_REVIEW or containing an in-frame stop is withdrawn. On 60 development
-  genomes not seen before: no feature lost or moved, CDS F1 at +/-60 bp up
-  0.138 points (15 genes gained, 2 wrong additions), ndhA missing from 1
-  genome instead of 11. Exact-coordinate F1 is unchanged.
+  engine had a complete call. ndhA was the gene most often lost this way. The
+  discarded call is now kept aside and tried if the kept one did not survive,
+  in a probe of the real selector that must return every other feature
+  unchanged; after the final QC, a rescued call flagged NEEDS_REVIEW or
+  containing an in-frame stop is withdrawn. It was validated on development
+  genomes not used before, against a criterion fixed in advance: no feature
+  was lost or moved. Measured accuracy will be published with the manuscript,
+  after the independent review of the scorer and protocol.
 - **Two tests failed wherever the database was not unpacked in the working
   directory.** `test_ir_lacking_genome.py` and `test_relatives_ordering.py` passed
   the literal path `database/protein_db`, so in a fresh clone, a worktree, or after
@@ -37,16 +37,16 @@ not used before.
   does, through `plastanno.paths.db_root()`.
 - **The start-up banner said "Plastanno v2.0".** It now prints the installed
   version.
-- **A CDS carried its gene symbol as /product.** Every CDS but rps12 was written
-  as, for example, `/product="psbA"` rather than "photosystem II protein D1", in
-  the `.gb`, the `.gff3` and the `.tbl` meant for NCBI submission: 97.7% of CDS,
-  in every release since the first. GenBank records use the bare symbol in about
-  0.05% of CDS. The catalog held the protein names all along, but nothing read
-  them. Each CDS now takes its protein name from the catalog once, before any
-  writer runs, so the three formats cannot disagree; a product already set is
-  kept. The catalog's chlN name is corrected from "photochlorophyllide" to
-  "protochlorophyllide reductase ChlN subunit". tRNA and rRNA products were
-  already correct and are unchanged.
+- **A CDS carried its gene symbol as /product.** Every CDS but rps12 was
+  written as, for example, `/product="psbA"` rather than "photosystem II
+  protein D1", in the `.gb`, the `.gff3` and the `.tbl` meant for NCBI
+  submission, in every release since the first. GenBank records almost never
+  use the bare symbol. The catalog held the protein names all along, but
+  nothing read them. Each CDS now takes its protein name from the catalog
+  once, before any writer runs, so the three formats cannot disagree; a
+  product already set is kept. The catalog's chlN name is corrected from
+  "photochlorophyllide" to "protochlorophyllide reductase ChlN subunit". tRNA
+  and rRNA products were already correct and are unchanged.
 - **The 3.0.0 entry miscounted its own test suite.** It said "Thirteen test
   files, 206 checks, none needing an external dataset". The tag has fourteen
   files and 365 checks, and one of them, `test_relatives_ordering.py`, does need

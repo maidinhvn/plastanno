@@ -74,8 +74,8 @@ gene -- the held-aside call is tried: `_select` is re-run on copies of the
 survivors plus the candidate, and the candidate is added only if every survivor
 comes back unchanged, so nothing that would have been output can move or vanish.
 After the final QC, a rescued CDS that is flagged NEEDS_REVIEW or contains an
-in-frame stop is withdrawn (`reconcile.revoke_implausible_rescues`). On 60
-development genomes not used before, ndhA went from missing in 11 genomes to 1.
+in-frame stop is withdrawn (`reconcile.revoke_implausible_rescues`). ndhA is the
+gene this most often recovers.
 
 ## Provenance
 
