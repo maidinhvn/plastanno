@@ -8,6 +8,16 @@ never used during development.
 
 ### Fixed
 
+- **A CDS carried its gene symbol as /product.** Every CDS but rps12 was written
+  as, for example, `/product="psbA"` rather than "photosystem II protein D1", in
+  the `.gb`, the `.gff3` and the `.tbl` meant for NCBI submission: 97.7% of CDS,
+  in every release since the first. GenBank records use the bare symbol in about
+  0.05% of CDS. The catalog held the protein names all along, but nothing read
+  them. Each CDS now takes its protein name from the catalog once, before any
+  writer runs, so the three formats cannot disagree; a product already set is
+  kept. The catalog's chlN name is corrected from "photochlorophyllide" to
+  "protochlorophyllide reductase ChlN subunit". tRNA and rRNA products were
+  already correct and are unchanged.
 - **The 3.0.0 entry miscounted its own test suite.** It said "Thirteen test
   files, 206 checks, none needing an external dataset". The tag has fourteen
   files and 365 checks, and one of them, `test_relatives_ordering.py`, does need

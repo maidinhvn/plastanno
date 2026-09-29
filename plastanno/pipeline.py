@@ -306,8 +306,12 @@ def run(
     # Every check that can change a feature runs here, once, BEFORE the counts below
     # are printed and before any file is written. It used to sit inside the writer,
     # so the summary described a different state from the files on disk.
-    from .core.finalize import finalize_qc
+    from .core.finalize import finalize_qc, assign_cds_products
     finalize_qc(annotations, genome_seq)
+    _named, _unnamed = assign_cds_products(annotations, gene_catalog)
+    if _unnamed:
+        print(f"      CDS without a protein name in the catalog: {_unnamed} "
+              "(the gene symbol is written as /product)")
 
     high   = sum(1 for a in annotations if a.flag == "HIGH")
     medium = sum(1 for a in annotations if a.flag == "MEDIUM")

@@ -154,3 +154,33 @@ def finalize_qc(annotations, genome_seq, boundary_conflict_bp=None, genome_len=N
                 "annotated as a partial CDS, translation withheld"
                 % _coords.spliced_length(ann, genome_len))
     return annotations
+
+
+def assign_cds_products(annotations, gene_catalog):
+    """Give each CDS its protein name from the catalog, once, before output.
+
+    Until now no CDS but rps12 reached the writers with a product, and each writer
+    substituted the gene symbol: /product="psbA" where GenBank practice is
+    "photosystem II protein D1", in the .gb, the .gff3 and the .tbl meant for
+    submission (parked/product_qualifier/FINDINGS.md). The catalog held the
+    protein names all along; nothing read them.
+
+    A product already set is kept (rps12's, every tRNA's and rRNA's). A pseudogene
+    is written without a product feature, so it is skipped. A CDS whose name the
+    catalog cannot name keeps the symbol fallback and says so in its notes.
+
+    Returns (named, unnamed).
+    """
+    named = unnamed = 0
+    for ann in annotations:
+        if ann.gene_type != "CDS" or ann.product or ann.is_pseudogene:
+            continue
+        product = (gene_catalog.get(ann.gene_name) or {}).get("product")
+        if product and product != ann.gene_name:
+            ann.product = product
+            named += 1
+        else:
+            ann.notes.append(QC + "no protein name in the catalog; /product "
+                             "falls back to the gene symbol")
+            unnamed += 1
+    return named, unnamed

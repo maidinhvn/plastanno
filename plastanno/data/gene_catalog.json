@@ -1260,7 +1260,7 @@
     "n_exons": 1,
     "short_first_exon": 0,
     "synonym_of": null,
-    "product": "photochlorophyllide reductase subunit N"
+    "product": "protochlorophyllide reductase ChlN subunit"
   },
   "chlL": {
     "type": "CDS",
