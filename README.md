@@ -332,14 +332,18 @@ tarball instead of cloning.
 
 ## Benchmarking
 
-Quality is measured by gene-by-gene comparison against reference GenBank files
-(true positive = name match + both ends within ±tol bp + sequence similarity):
+These two scripts compare a prediction with reference GenBank files gene by gene. A
+true positive is a name match, both ends within ±tol bp and sequence similarity
+above a threshold. With the default ±60 bp a call one base off counts as exact, so
+the aggregate script also reports the same F1 at exact coordinates; the gap
+between the two is the boundary error. Neither is a published accuracy figure (see
+Performance).
 
 ```bash
 # Score one predicted .gb against a reference .gb
 python3 scripts/benchmark/benchmark_gene_by_gene.py reference.gb predicted.gb --tol 60 --sim 0.6
 
-# Aggregate F1 over a sample
+# Aggregate F1 over a development sample, at ±60 bp and at exact coordinates
 python3 scripts/benchmark/multi_genome_bench.py --n 120 --workers 16
 ```
 
