@@ -13,6 +13,21 @@ never used during development.
   report header and the DEFINITION line written when no organism is given now say
   "Plastanno".
 
+### Known limitations
+
+- A pseudogene can be written as a CDS instead of a pseudogene. The CDS carries
+  NEEDS_REVIEW and a `[submission]` note that names the defect (frameshifts, internal
+  stop codons, no stop codon). The search in the inverted repeat can add such a CDS
+  for a gene whose catalog region gave no usable hit.
+- In some genomes outside the flowering plants, chlB or chlN is written twice at the
+  same coordinates (also in 3.0.1). NCBI's validator reports it as a duplicate
+  feature, a warning.
+- In ferns, the start-codon repair can move an ACG start, which RNA editing turns
+  into a real start, to a downstream ATG. The CDS keeps a `[start moved]` note and
+  NEEDS_REVIEW.
+- In Cycadaceae, a spurious psbM fragment can end up on the same coordinates as psbZ.
+  It is flagged NEEDS_REVIEW.
+
 ## [3.0.1] — 2026-09-29
 
 A patch release: the same commands and options, and the same reference database
