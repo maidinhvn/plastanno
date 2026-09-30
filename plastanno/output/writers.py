@@ -640,12 +640,15 @@ def write_report(annotations, accession, genome_len,
                 f.write(f"  {a.gene_name:<10} {a.start + 1}..{a.end} "
                         f"({'+' if a.strand == 1 else '-'})  {why}\n")
         moved5 = [a for a in repaired if "start codon was moved" in note_of(a)]
-        done3 = [a for a in repaired if a not in moved5]
-        for group, what in ((done3, "completed their 3' end"),
-                            (moved5, "moved their start codon")):
+        outside = [a for a in repaired if a not in moved5 and "outside its catalog region" in note_of(a)]
+        done3 = [a for a in repaired if a not in moved5 and a not in outside]
+        for group, what in ((done3, "pass only because the pipeline completed their 3' end"),
+                            (moved5, "pass only because the pipeline moved their start codon"),
+                            (outside, "pass, but were found in the inverted repeat, outside their "
+                                      "catalog region")):
             if not group:
                 continue
-            f.write(f"  {len(group)} CDS pass only because the pipeline {what}; "
+            f.write(f"  {len(group)} CDS {what}; "
                     "check their start and exon structure:\n")
             for a in sorted(group, key=lambda x: x.start):
                 why = note_of(a)[len(SUBMIT):]

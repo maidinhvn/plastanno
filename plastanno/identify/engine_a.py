@@ -280,20 +280,45 @@ def run_exonerate_gene(genome_seq, gene_name,
         c = ir_boundaries.get(region_key)
         search_regs = [c] if c else [(0, genome_len)]
 
+    def search(regions):
+        found = []
+        for reg_s, reg_e in regions:
+            for prot in proteins[:5]:  # max 5 proteins per region
+                found.extend(run_exonerate_region(
+                    genome_seq  = genome_seq,
+                    protein_seq = str(prot.seq),
+                    gene_name   = gene_name,
+                    prot_acc    = prot.id,
+                    region_start= reg_s,
+                    region_end  = reg_e,
+                    genome_len  = genome_len,
+                ))
+        return found
+
     # Run Exonerate on each region
-    all_hits = []
-    for reg_s, reg_e in search_regs:
-        for prot in proteins[:5]:  # max 5 proteins per region
-            hits = run_exonerate_region(
-                genome_seq  = genome_seq,
-                protein_seq = str(prot.seq),
-                gene_name   = gene_name,
-                prot_acc    = prot.id,
-                region_start= reg_s,
-                region_end  = reg_e,
-                genome_len  = genome_len,
-            )
-            all_hits.extend(hits)
+    all_hits = search(search_regs)
+
+    # An inverted repeat that has expanded over the single-copy region takes that region's genes
+    # with it, in two copies. A gene searched only in its catalog region is then never found:
+    # ndhA, the one SSC gene with an intron, was lost whole in genomes whose SSC had shrunk to a
+    # few kb (Engine B's profile hits cover one exon each, below the length filter). When the
+    # catalog region gives no hit that could pass that filter, the gene is looked for in both IR
+    # copies. "No hit at all" was not enough: the 2 kb window around the SSC reaches a fragment of
+    # an IR copy sitting near the boundary (Cyperaceae ndhA), and that fragment is then dropped.
+    # What the IR search finds is marked for review: it lies outside the gene's catalog region.
+    from ..core.finalize import OUT_OF_REGION
+    in_ir = gene_name in IR_GENES or region_key in ("IRb", "IR")
+    irs = [ir_boundaries.get(r) for r in ("IRb", "IRa") if ir_boundaries.get(r)]
+    exp = cat.get("expected_len")
+    passes = lambda h: not exp or _coords.spliced_length(h, genome_len) >= 0.6 * exp
+    if not any(passes(h) for h in all_hits) and not in_ir and ir_boundaries.get(region_key) \
+            and len(irs) == 2:
+        ir_hits = search(irs)
+        for h in ir_hits:
+            h.notes.append(OUT_OF_REGION + "found in the inverted repeat, outside its catalog "
+                           "region (%s)" % region_key)
+        all_hits = [h for h in all_hits
+                    if not any(_coords.overlap_bp(h, k, genome_len) > 0 for k in ir_hits)] + ir_hits
 
     # Deduplicate by actual overlap, not by a 500-bp bucket of the start
     # coordinate: two hits 2 bp apart either side of a bucket edge both survived,
