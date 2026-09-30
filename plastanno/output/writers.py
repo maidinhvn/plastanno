@@ -625,16 +625,25 @@ def write_report(annotations, accession, genome_len,
         # Every CDS NCBI's validator would reject (finalize.submission_check), in one place,
         # so a submitter knows exactly what to fix before running table2asn.
         from ..core.finalize import SUBMIT
+        note_of = lambda a: next(str(n) for n in a.notes if str(n).startswith(SUBMIT))
         failing = [a for a in cds if any(str(n).startswith(SUBMIT) for n in a.notes)]
+        ncbi = [a for a in failing if "would fail NCBI validation" in note_of(a)]
+        repaired = [a for a in failing if a not in ncbi]
         f.write("\nSubmission check (NCBI table2asn CDS rules, genetic code 11):\n")
-        if not failing:
+        if not ncbi:
             f.write("  No CDS would fail NCBI validation.\n")
         else:
-            f.write(f"  {len(failing)} CDS would fail NCBI validation; "
+            f.write(f"  {len(ncbi)} CDS would fail NCBI validation; "
                     "fix or mark them before submitting:\n")
-            for a in sorted(failing, key=lambda x: x.start):
-                note = next(str(n) for n in a.notes if str(n).startswith(SUBMIT))
-                why = note[len(SUBMIT):].replace("would fail NCBI validation: ", "")
+            for a in sorted(ncbi, key=lambda x: x.start):
+                why = note_of(a)[len(SUBMIT):].replace("would fail NCBI validation: ", "")
+                f.write(f"  {a.gene_name:<10} {a.start + 1}..{a.end} "
+                        f"({'+' if a.strand == 1 else '-'})  {why}\n")
+        if repaired:
+            f.write(f"  {len(repaired)} CDS pass only because the pipeline completed their "
+                    "3' end; check their start and exon structure:\n")
+            for a in sorted(repaired, key=lambda x: x.start):
+                why = note_of(a)[len(SUBMIT):]
                 f.write(f"  {a.gene_name:<10} {a.start + 1}..{a.end} "
                         f"({'+' if a.strand == 1 else '-'})  {why}\n")
 

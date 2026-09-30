@@ -158,6 +158,10 @@ def finalize_qc(annotations, genome_seq, boundary_conflict_bp=None, genome_len=N
 
 # Notes written by submission_check carry this prefix, so a second pass can clear them.
 SUBMIT = "[submission] "
+# The terminal-stop step (annotate/refine_splice) marks a CDS whose 3' end it completed or
+# trimmed beyond what 3.0.1 did, so submission_check keeps it NEEDS_REVIEW even when the ORF
+# is now valid: a clean 3' end says nothing about the rest of the gene model.
+COMPLETED_3P = "[3' completed] "
 # Initiation codons of NCBI genetic code 11, the ones table2asn accepts as a CDS start.
 TABLE11_STARTS = ("ATG", "GTG", "TTG", "CTG", "ATT", "ATC", "ATA")
 STOP_CODONS = ("TAA", "TAG", "TGA")
@@ -182,6 +186,9 @@ def submission_check(annotations, genome_seq, genome_len=None):
     written without a CDS and are skipped.
 
     A failing CDS becomes NEEDS_REVIEW, with a note naming each problem and the flag it had.
+    So does a CDS whose 3' end the terminal-stop step completed or trimmed (a COMPLETED_3P note),
+    even when its ORF is now valid: the repair made it pass the validator, and a clean 3' end
+    says nothing about its start or its splice sites.
     Nothing else changes: no coordinate, no feature, no confidence. That is why this runs
     after revoke_implausible_rescues. Inside finalize_qc its flags would feed that gate and
     remove rescued CDS, which is a change to the annotation, not a warning about it.
@@ -220,15 +227,23 @@ def submission_check(annotations, genome_seq, genome_len=None):
         internal = sum(1 for c in codons[:-1] if c in STOP_CODONS)
         if internal:
             problems.append("%d internal stop codon(s)" % internal)
-        if not problems:
+        completed = [str(n)[len(COMPLETED_3P):] for n in ann.notes if str(n).startswith(COMPLETED_3P)]
+        if not problems and not completed:
             continue
         was = ann.flag
         if was == "NEEDS_REVIEW" and lowered_from:     # lowered by this function's earlier pass
             was = lowered_from
         ann.flag = "NEEDS_REVIEW"
-        ann.notes.append(SUBMIT + "would fail NCBI validation: " + "; ".join(problems)
+        if problems:
+            text = "would fail NCBI validation: " + "; ".join(problems)
+            if completed:
+                text += "; its 3' end was completed by the pipeline (%s)" % "; ".join(completed)
+        else:
+            text = ("its 3' end was completed by the pipeline (%s): check its start and exon "
+                    "structure before submitting" % "; ".join(completed))
+        ann.notes.append(SUBMIT + text
                          + ("" if was == "NEEDS_REVIEW" else "; flag lowered from " + was))
-        failing.append((ann, problems))
+        failing.append((ann, problems or ["3' end completed by the pipeline"]))
     return failing
 
 

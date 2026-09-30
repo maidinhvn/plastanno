@@ -204,38 +204,73 @@ def _refine_one(feat, g):
 
 
 _STOP = {"TAA", "TAG", "TGA"}
-_SNAP_MAX_CODONS = 3          # only look ≤ 9 bp downstream (RNA-editing-safe)
+# How far to look. On development genomes, the first in-frame stop after a CDS that lacked one
+# was the reference's 3' end in almost every case, often well beyond 3 codons, and a read-through
+# past the real stop was never more than a few codons.
+_OLD_SNAP_CODONS = 3          # what 3.0.1 did silently, with its length guard
+_EXTEND_MAX_CODONS = 100
+_TRIM_MAX_CODONS = 5
+
 
 def _snap_terminal_stop(feat, g, gene_catalog):
-    """Extend a CDS 3' end by up to _SNAP_MAX_CODONS codons to reach the nearest
-    in-frame stop, when the spliced CDS does not already end in a stop.
+    """End a CDS at its first in-frame stop codon, and say so when that was a real repair.
 
-    Deliberately CONSERVATIVE. Many plastid CDS (esp. multi-exon) are annotated a
-    codon short of the terminal stop; snapping to the adjacent genomic stop fixes
-    that. The window is tiny (≤ 9 bp) and the result must not overshoot the
-    expected length, so genes whose functional stop is created by RNA editing
-    (genomic read-through, e.g. some ndh/rpl2) are NOT force-extended to a distant
-    downstream stop — if no genomic stop sits right at the terminus we leave it.
+    On the spliced CDS read in transcription order, in this order:
+
+      1 trim      the first in-frame stop before the last codon lies within the last
+                  _TRIM_MAX_CODONS codons: the CDS read through its stop; end it there. Marked.
+      2           the last codon is a stop: nothing to do.
+      3 old snap  a stop within _OLD_SNAP_CODONS codons that keeps the CDS within 1.2x the
+                  catalog's expected length: extend to it silently. This is exactly what 3.0.1
+                  did, whatever lies upstream (a gene whose reference carries an internal stop,
+                  like some rps11, still gets its adjacent stop).
+      4 complete  no internal stop at all: extend to the first in-frame stop within
+                  _EXTEND_MAX_CODONS codons, read round the origin. Marked.
+      5           otherwise nothing: an internal stop further upstream is a frame or pseudogene
+                  problem, and a clean 3' end would only hide it.
+
+    A marked CDS carries a note starting with finalize.COMPLETED_3P, and
+    finalize.submission_check keeps it NEEDS_REVIEW even when its ORF is now valid. Completing
+    a 3' end makes the ORF pass NCBI's validator, which would otherwise remove the warning from a
+    gene model that is still wrong at its start or its splice sites. On development genomes that
+    happened to most of the CDS repaired this way.
     """
+    from ..core.finalize import COMPLETED_3P
     glen = len(g)
     # The coding sequence in TRANSCRIPTION order. Concatenating sorted(exons) puts
     # a wrapped gene's parts the wrong way round — the piece after the origin first
     # — so the frame, and therefore the terminal codon, were read from the wrong
     # place.
-    seq = _coords.extract(g, feat, glen)
-    if len(seq) < 6 or len(seq) % 3 != 0:      # need an intact frame to snap
+    seq = _coords.extract(g, feat, glen).upper()
+    if len(seq) < 6 or len(seq) % 3 != 0:      # need an intact frame
         return False
-    if seq[-3:].upper() in _STOP:               # already terminated
-        return False
-
-    cur_len = _coords.spliced_length(feat, glen)
-    exp = (gene_catalog.get(feat.gene_name, {}) or {}).get("expected_len", 0)
     # The exons in transcription order; the LAST one carries the 3' end, wherever
     # that sits on the circle.
     parts = _coords.transcript_parts(feat, glen)
     if not parts:
         return False
     s0, e0, st0 = parts[-1]
+    codons = [seq[i:i + 3] for i in range(0, len(seq), 3)]
+    internal = [i for i, c in enumerate(codons[:-1]) if c in _STOP]
+
+    # 1 trim a short read-through past the first stop
+    if internal and len(codons) - 1 - internal[0] <= _TRIM_MAX_CODONS:
+        cut = len(codons) - 1 - internal[0]      # codons read past the first stop
+        if 3 * cut >= e0 - s0:
+            return False                         # the cut would leave the last exon
+        if st0 == 1:
+            last = (s0, e0 - 3 * cut)
+            feat.end = e0 - 3 * cut
+        else:
+            last = (s0 + 3 * cut, e0)
+            feat.start = s0 + 3 * cut
+        feat.exons = sorted([(a, b) for a, b, _ in parts[:-1]] + [last])
+        feat.notes.append(COMPLETED_3P + "3' end trimmed to the first in-frame stop "
+                          "(%d codon(s) of read-through)" % cut)
+        return True
+    # 2 already terminated
+    if codons[-1] in _STOP:
+        return False
 
     def codon_at(k):
         """The k-th codon downstream of the 3' end, read round the origin."""
@@ -249,15 +284,8 @@ def _snap_terminal_stop(feat, g, gene_catalog):
             piece = _rc(piece)
         return piece.upper()
 
-    for k in range(_SNAP_MAX_CODONS):
-        codon = codon_at(k)
-        if len(codon) != 3:
-            break
-        if codon not in _STOP:
-            continue
+    def extend(k):
         grow = 3 * (k + 1)
-        if exp and (cur_len + grow) / exp > 1.2:      # never overshoot the gene
-            return False
         # Extend the terminal exon along the circle; it may now cross the origin
         # and become two arcs.
         if st0 == 1:
@@ -266,13 +294,36 @@ def _snap_terminal_stop(feat, g, gene_catalog):
             ns, ne = s0 - grow, e0
         arcs = _coords.region_arcs(ns % glen, (ne % glen) or glen, glen) \
             if (ns < 0 or ne > glen) else [(ns, ne)]
-        exons = sorted([(a, b) for a, b, _ in parts[:-1]] + arcs)
-        feat.exons = exons
+        feat.exons = sorted([(a, b) for a, b, _ in parts[:-1]] + arcs)
         if st0 == 1:
             feat.end = (e0 + grow) % glen or glen
         else:
             feat.start = (s0 - grow) % glen
-        return True
+
+    # 3 the old snap, unchanged: a stop within 3 codons, within the old length guard
+    cur_len = len(seq)
+    exp = (gene_catalog.get(feat.gene_name, {}) or {}).get("expected_len", 0)
+    for k in range(_OLD_SNAP_CODONS):
+        codon = codon_at(k)
+        if len(codon) != 3:
+            break
+        if codon in _STOP:
+            if not (exp and (cur_len + 3 * (k + 1)) / exp > 1.2):
+                extend(k)
+                return True
+            break                                # guard blocked: leave it to step 4
+    # 4 complete a truncated 3' end
+    if internal:
+        return False
+    for k in range(_EXTEND_MAX_CODONS):
+        codon = codon_at(k)
+        if len(codon) != 3:
+            break
+        if codon in _STOP:
+            extend(k)
+            feat.notes.append(COMPLETED_3P + "3' end extended to the first in-frame stop "
+                              "(%d codon(s))" % (k + 1))
+            return True
     return False
 
 
@@ -291,9 +342,10 @@ def refine_all(annotations, genome_seq, gene_catalog=None):
             # on was simply left unrefined with no trace.
             print("      WARNING: splice refinement failed for %s (%s: %s)"
                   % (getattr(f, "gene_name", "?"), type(exc).__name__, exc))
-    # Terminal-stop snap — all CDS (single- and multi-exon), skip pseudogenes and
-    # trans-spliced features. Runs after junction refinement so it snaps the final
-    # exon end.
+    # Terminal stop — all CDS (single- and multi-exon), skip pseudogenes and
+    # trans-spliced features: trim a short read-through, snap an adjacent stop, or
+    # complete a truncated 3' end. Runs after junction refinement so it works on the
+    # final exon end.
     for f in annotations:
         if getattr(f, "gene_type", None) != "CDS": continue
         if getattr(f, "exon_strands", None): continue

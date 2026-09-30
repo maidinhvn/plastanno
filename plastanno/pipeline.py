@@ -322,7 +322,7 @@ def run(
     from .core.finalize import submission_check
     _unsubmittable = submission_check(annotations, genome_seq)
     if _unsubmittable:
-        print("      CDS that would fail NCBI validation: %d (flagged NEEDS_REVIEW, "
+        print("      CDS to check before submission: %d (flagged NEEDS_REVIEW, "
               "listed in the report)" % len(_unsubmittable))
 
     high   = sum(1 for a in annotations if a.flag == "HIGH")
