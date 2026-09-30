@@ -624,6 +624,25 @@ def _recover_first_exon(feat, genome_seq, profile, median_len):
     return True
 
 
+def _ref_protein_file(protein_db, gene):
+    """The file of a gene's reference proteins, or None.
+
+    Step 6 renames a gene to its majority name before anything else, but the protein database
+    keeps the proteins under the name the engines search with: psbN's are in pbf1.fasta. A
+    lookup by the new name alone found nothing, so from 3.0.1 on ORF completion skipped every
+    psbN, and a psbN call four codons short of its stop stayed short. The new name is read when
+    its file exists; otherwise the file of a name SYNONYMS maps to it.
+    """
+    p = Path(protein_db) / ("%s.fasta" % gene)
+    if p.exists():
+        return p
+    for old in sorted(o for o, new in SYNONYMS.items() if new == gene):
+        q = Path(protein_db) / ("%s.fasta" % old)
+        if q.exists():
+            return q
+    return None
+
+
 def _load_ref_profile(protein_db, gene):
     """Return (profile, median_len, refs) for a gene, or None.
 
@@ -633,8 +652,8 @@ def _load_ref_profile(protein_db, gene):
     """
     from collections import Counter
     from Bio import SeqIO
-    p = Path(protein_db) / ("%s.fasta" % gene)
-    if not p.exists():
+    p = _ref_protein_file(protein_db, gene)
+    if p is None:
         return None
     try:
         seqs = [str(r.seq).rstrip("*") for r in SeqIO.parse(str(p), "fasta")]
