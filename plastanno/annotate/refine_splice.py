@@ -56,9 +56,23 @@ def _merge_short(ex):
         else: m.append([s, e])
     return [(s, e) for s, e in m]
 
+# Why the exon panel could not be searched, once said. Without the panel every panel gene keeps
+# its engine junctions, and that used to happen without a word: a database that BLAST cannot
+# read (a version-5 rebuild missing its index files, a truncated install) made _blast_exons
+# return nothing, and junction refinement was skipped for every gene while the run looked normal.
+_PANEL_PROBLEM = []
+
+
+def _panel_unavailable(why):
+    if not _PANEL_PROBLEM:
+        _PANEL_PROBLEM.append(why)
+        print("      WARNING: splice-junction refinement is skipped for every panel gene: %s" % why)
+    return {}
+
+
 def _blast_exons(region, gene):
     if not os.path.exists(_BDB + ".nin"):
-        return {}
+        return _panel_unavailable("the exon panel database is missing (%s.nin)" % _BDB)
     qf = tempfile.NamedTemporaryFile("w", suffix=".fa", delete=False)
     qf.write(">q\n" + region + "\n"); qf.close()
     try:
@@ -67,9 +81,14 @@ def _blast_exons(region, gene):
              "-outfmt", "6 sseqid qstart qend sstart send slen bitscore", "-strand", "plus",
              "-word_size", "7", "-dust", "no", "-evalue", "1", "-max_target_seqs", "300"],
             capture_output=True, text=True, timeout=60)
-    except Exception:
-        os.unlink(qf.name); return {}
+    except Exception as exc:                          # noqa: BLE001
+        os.unlink(qf.name)
+        return _panel_unavailable("blastn could not be run (%s: %s)" % (type(exc).__name__, exc))
     os.unlink(qf.name)
+    if r.returncode != 0:
+        err = (r.stderr or "").strip().splitlines()
+        return _panel_unavailable("BLAST could not search the exon panel (%s)"
+                                  % (err[0] if err else "exit %d" % r.returncode))
     n = len(region); best = {}
     for line in r.stdout.splitlines():
         sid, qs, qe, ss, se, slen, bits = line.split("\t")
