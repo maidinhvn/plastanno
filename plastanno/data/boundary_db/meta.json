@@ -28,5 +28,9 @@
  },
  "rpoC1": {
   "n_exons": 2
+ },
+ "rpl2": {
+  "n_exons": 2,
+  "keep_ends": true
  }
 }

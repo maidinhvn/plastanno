@@ -204,6 +204,16 @@ def _refine_one(feat, g):
         hsp = _blast_exons(C, feat.gene_name)
         if len(hsp) == len(ex):
             cex = sorted(hsp[i] for i in sorted(hsp))
+            if M.get("keep_ends"):
+                # The panel places this gene's junctions, not its ends. rpl2 is the case: its
+                # panel moves exon 2's start to where the reference proteins put it, but the
+                # panel's start codon is an ATG while many lineages start on an edited ACG, and
+                # transferring it made rpl2 look complete when it was not. The CDS keeps the 5'
+                # and 3' ends it came in with; the start-codon and terminal-stop passes see to
+                # them afterwards.
+                own = sorted((wlen - e, wlen - s) for s, e in ex) if strand == -1 else list(ex)
+                cex[0] = (own[0][0], cex[0][1])
+                cex[-1] = (cex[-1][0], own[-1][1])
             ce = _constrained(C, cex)
             if ce:
                 if strand == -1:
