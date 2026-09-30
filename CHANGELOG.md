@@ -1,10 +1,17 @@
 # Changelog
 
-All notable changes to Plastanno v2. Benchmarks are measured on the DEV split
+All notable changes to Plastanno. Benchmarks are measured on the DEV split
 (n=123 shared genomes) against reference GenBank annotations; the held-out set is
 never used during development.
 
 ## [Unreleased]
+
+### Changed
+
+- **The tool is called Plastanno.** "v2" is dropped from its name, which it had
+  outlived: the version is 3.x. The README title, `--help`, the database builder, the
+  report header and the DEFINITION line written when no organism is given now say
+  "Plastanno".
 
 ## [3.0.1] — 2026-09-29
 

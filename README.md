@@ -1,4 +1,4 @@
-# Plastanno v2
+# Plastanno
 
 **A hybrid, self-evaluating chloroplast-genome (plastome) annotator.**
 

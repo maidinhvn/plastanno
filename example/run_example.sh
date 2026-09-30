@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Worked example: annotate the bundled plastomes with Plastanno v2.
+# Worked example: annotate the bundled plastomes with Plastanno.
 # Requires BLAST+, Exonerate, HMMER (hmmsearch) and ARAGORN on PATH, plus the
 # full database/ (see README "Databases").
 set -e

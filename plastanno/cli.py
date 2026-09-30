@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Plastanno v2 — Plastome Annotation Tool (command-line interface)
+Plastanno — Plastome Annotation Tool (command-line interface)
 Hybrid: Reference-based (Engine A) + Model-based (Engine B)
 
 Usage:
@@ -155,7 +155,7 @@ def cmd_fetch_db(args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Plastanno v2 — Plastome Annotation Tool",
+        description="Plastanno — Plastome Annotation Tool",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )

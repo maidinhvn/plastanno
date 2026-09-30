@@ -1,5 +1,5 @@
 """
-Output writers for Plastanno v2.
+Output writers for Plastanno.
 Writes: .gb, .gff3, .faa, .ffn, .frn, .report, and (unless no_plot) a circular
 plastome map (_map.png/.pdf/.svg).
 
@@ -99,7 +99,7 @@ def write_genbank(annotations, genome_seq, accession,
     org = (organism or "").strip() or PLACEHOLDER_ORGANISM
     # No trailing '.' — Biopython appends one when writing the DEFINITION line.
     definition = (f"{org} chloroplast, complete genome"
-                  if organism else "Annotated by Plastanno v2")
+                  if organism else "Annotated by Plastanno")
 
     seq    = Seq(genome_seq)
     record = SeqRecord(
@@ -531,7 +531,7 @@ def write_report(annotations, accession, genome_len,
                   out_path):
     """Write QC report with provenance summary."""
     with open(out_path, "w") as f:
-        f.write(f"Plastanno v2 Report\n")
+        f.write(f"Plastanno Report\n")
         f.write(f"{'='*60}\n")
         f.write(f"Accession  : {accession}\n")
         f.write(f"Length     : {genome_len:,} bp\n")

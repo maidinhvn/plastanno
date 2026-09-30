@@ -1,4 +1,4 @@
-# Plastanno v2 — runtime environment (dependencies only; the tool itself is
+# Plastanno — runtime environment (dependencies only; the tool itself is
 # obtained by `git clone`).
 #
 #   conda env create -f environment.yml

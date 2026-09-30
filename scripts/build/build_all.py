@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Plastanno v2 — build_all.py
+Plastanno — build_all.py
 Build ALL databases from scratch.
 
 Usage:
@@ -355,7 +355,7 @@ def build_gene_catalog(df, out_path):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Plastanno v2 — Build all databases"
+        description="Plastanno — Build all databases"
     )
     parser.add_argument("--genes",   required=True,
                         help="Path to all_genes_full.tsv")
@@ -371,7 +371,7 @@ def main():
     OUT.mkdir(parents=True, exist_ok=True)
 
     print("=" * 60)
-    print("Plastanno v2 — Database Builder")
+    print("Plastanno — Database Builder")
     print("=" * 60)
 
     # Load main data

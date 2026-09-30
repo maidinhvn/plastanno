@@ -1,4 +1,4 @@
-# Plastanno v2 Design Document
+# Plastanno Design Document
 
 > **Status.** This records the design intent carried over from v1, written
 > before the tool was built. It is kept as a record and is not a description of

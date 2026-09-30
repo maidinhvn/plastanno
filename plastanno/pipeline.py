@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Plastanno v2 — Main pipeline
+Plastanno — Main pipeline
 Hybrid annotation: Engine A (reference) + Engine B (model)
 with reconciliation layer.
 """
