@@ -639,10 +639,15 @@ def write_report(annotations, accession, genome_len,
                 why = note_of(a)[len(SUBMIT):].replace("would fail NCBI validation: ", "")
                 f.write(f"  {a.gene_name:<10} {a.start + 1}..{a.end} "
                         f"({'+' if a.strand == 1 else '-'})  {why}\n")
-        if repaired:
-            f.write(f"  {len(repaired)} CDS pass only because the pipeline completed their "
-                    "3' end; check their start and exon structure:\n")
-            for a in sorted(repaired, key=lambda x: x.start):
+        moved5 = [a for a in repaired if "start codon was moved" in note_of(a)]
+        done3 = [a for a in repaired if a not in moved5]
+        for group, what in ((done3, "completed their 3' end"),
+                            (moved5, "moved their start codon")):
+            if not group:
+                continue
+            f.write(f"  {len(group)} CDS pass only because the pipeline {what}; "
+                    "check their start and exon structure:\n")
+            for a in sorted(group, key=lambda x: x.start):
                 why = note_of(a)[len(SUBMIT):]
                 f.write(f"  {a.gene_name:<10} {a.start + 1}..{a.end} "
                         f"({'+' if a.strand == 1 else '-'})  {why}\n")

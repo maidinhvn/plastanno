@@ -162,6 +162,10 @@ SUBMIT = "[submission] "
 # trimmed beyond what 3.0.1 did, so submission_check keeps it NEEDS_REVIEW even when the ORF
 # is now valid: a clean 3' end says nothing about the rest of the gene model.
 COMPLETED_3P = "[3' completed] "
+# The start-codon step (annotate/refine_splice) marks a CDS whose first codon was not a start
+# codon and which it moved to one nearby; submission_check keeps it NEEDS_REVIEW for the same
+# reason: a valid start codon does not make it the right one.
+MOVED_5P = "[start moved] "
 # Initiation codons of NCBI genetic code 11, the ones table2asn accepts as a CDS start.
 TABLE11_STARTS = ("ATG", "GTG", "TTG", "CTG", "ATT", "ATC", "ATA")
 STOP_CODONS = ("TAA", "TAG", "TGA")
@@ -187,8 +191,9 @@ def submission_check(annotations, genome_seq, genome_len=None):
 
     A failing CDS becomes NEEDS_REVIEW, with a note naming each problem and the flag it had.
     So does a CDS whose 3' end the terminal-stop step completed or trimmed (a COMPLETED_3P note),
-    even when its ORF is now valid: the repair made it pass the validator, and a clean 3' end
-    says nothing about its start or its splice sites.
+    or whose start the start-codon step moved (a MOVED_5P note), even when its ORF is now valid:
+    the repair made it pass the validator, and a clean ORF says nothing about whether its start
+    or its splice sites are the right ones.
     Nothing else changes: no coordinate, no feature, no confidence. That is why this runs
     after revoke_implausible_rescues. Inside finalize_qc its flags would feed that gate and
     remove rescued CDS, which is a change to the annotation, not a warning about it.
@@ -228,22 +233,27 @@ def submission_check(annotations, genome_seq, genome_len=None):
         if internal:
             problems.append("%d internal stop codon(s)" % internal)
         completed = [str(n)[len(COMPLETED_3P):] for n in ann.notes if str(n).startswith(COMPLETED_3P)]
-        if not problems and not completed:
+        moved = [str(n)[len(MOVED_5P):] for n in ann.notes if str(n).startswith(MOVED_5P)]
+        if not problems and not completed and not moved:
             continue
         was = ann.flag
         if was == "NEEDS_REVIEW" and lowered_from:     # lowered by this function's earlier pass
             was = lowered_from
         ann.flag = "NEEDS_REVIEW"
+        repairs = []
+        if moved:
+            repairs.append("its start codon was moved by the pipeline (%s)" % "; ".join(moved))
+        if completed:
+            repairs.append("its 3' end was completed by the pipeline (%s)" % "; ".join(completed))
         if problems:
-            text = "would fail NCBI validation: " + "; ".join(problems)
-            if completed:
-                text += "; its 3' end was completed by the pipeline (%s)" % "; ".join(completed)
+            text = "; ".join(["would fail NCBI validation: " + "; ".join(problems)] + repairs)
         else:
-            text = ("its 3' end was completed by the pipeline (%s): check its start and exon "
-                    "structure before submitting" % "; ".join(completed))
+            text = "; ".join(repairs) + ": check its start and exon structure before submitting"
         ann.notes.append(SUBMIT + text
                          + ("" if was == "NEEDS_REVIEW" else "; flag lowered from " + was))
-        failing.append((ann, problems or ["3' end completed by the pipeline"]))
+        failing.append((ann, problems
+                        or ["start codon moved by the pipeline"] * bool(moved)
+                        + ["3' end completed by the pipeline"] * bool(completed)))
     return failing
 
 

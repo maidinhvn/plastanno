@@ -346,7 +346,128 @@ def _snap_terminal_stop(feat, g, gene_catalog):
     return False
 
 
-def refine_all(annotations, genome_seq, gene_catalog=None):
+# How far a start codon is looked for, either way, when the annotated one is not a start codon.
+# On development genomes a wider window moved more correct starts than it fixed.
+_START_WINDOW_CODONS = 10
+_MIN_FIRST_EXON_BP = 3        # a start moved downstream leaves at least this much of exon 1
+
+
+def _circ(g, a, n):
+    """n bases of the circular sequence g from position a, forward."""
+    glen = len(g)
+    a %= glen
+    return g[a:a + n] if a + n <= glen else g[a:] + g[:a + n - glen]
+
+
+def _move_5p(feat, g, grow):
+    """Move the 5' end of the first exon: `grow` bp further upstream, or trim it when negative.
+    Works on the biological first exon, which may be stored as two arcs at the origin."""
+    glen = len(g)
+    parts = _coords.transcript_parts(feat, glen)
+    s0, e0, st = parts[0]
+    runs = _coords.biological_exon_runs(sorted((s, e) for s, e, _ in parts), glen)
+    first = next(r for r in runs if (s0, e0) in r)
+    a, b = (first[0][0], first[1][1]) if len(first) == 2 else first[0]
+    if st == 1:
+        a = (a - grow) % glen
+    else:
+        b = (b + grow) % glen or glen
+    feat.exons = sorted([iv for r in runs if r is not first for iv in r]
+                        + _coords.region_arcs(a, b, glen))
+    if st == 1:
+        feat.start = a
+    else:
+        feat.end = b
+
+
+def _rescue_invalid_start(feat, g, protein_db, cache):
+    """Move a start that is not a start codon to the best-supported start codon nearby.
+
+    Only a CDS whose first codon is neither a table-11 initiation codon nor one of the gene's
+    SPECIAL_START_CODONS is touched: NCBI rejects every one of them, so there is no reference
+    convention to take sides with. A start that is merely different from a reference's (two
+    valid ATGs a few codons apart) is left alone; anchoring those by homology moved more
+    correct starts than it fixed on development genomes.
+
+    Candidates are in-frame ATG or special codons, up to _START_WINDOW_CODONS upstream (never
+    across an in-frame stop, read round the origin) or downstream (inside the first exon). The
+    one whose N-terminus the reference proteins support best wins; ties go to ATG, then to the
+    nearest, then upstream. Nothing moves if the current start is better supported than the
+    winner.
+
+    A moved CDS carries a note starting with finalize.MOVED_5P, and submission_check keeps it
+    NEEDS_REVIEW: a valid start codon says nothing about whether it is the right one, or about
+    the rest of the gene model.
+    """
+    from ..core.finalize import TABLE11_STARTS, MOVED_5P
+    from ..core.reconcile import SPECIAL_START_CODONS
+    from .special_cases import _load_ref_profile, _translate_orf, _nterm_support
+    glen = len(g)
+    seq = _coords.extract(g, feat, glen).upper()
+    if len(seq) < 6 or len(seq) % 3:
+        return False
+    codons = [seq[i:i + 3] for i in range(0, len(seq), 3)]
+    if any(c in _STOP for c in codons[:-1]):
+        return False                    # a frame or pseudogene problem, not a start
+    gene = feat.gene_name
+    special = tuple(SPECIAL_START_CODONS.get(gene, ()))
+    if codons[0] in TABLE11_STARTS or codons[0] in special:
+        return False
+    if gene not in cache:
+        cache[gene] = _load_ref_profile(protein_db, gene) if protein_db else None
+    if not cache[gene]:
+        return False                    # no reference proteins, no evidence to move on
+    profile = cache[gene][0]
+    allowed = ("ATG",) + special
+
+    parts = _coords.transcript_parts(feat, glen)
+    s0, e0, st = parts[0]
+    p5 = s0 if st == 1 else e0
+    runs = _coords.biological_exon_runs(sorted((s, e) for s, e, _ in parts), glen)
+    first_len = sum(e - s for s, e in next(r for r in runs if (s0, e0) in r))
+
+    def upstream(n):
+        """The n bases before the start, in coding orientation."""
+        return _circ(g, p5 - n, n).upper() if st == 1 else _rc(_circ(g, p5, n)).upper()
+
+    def support(cds):
+        return _nterm_support(_translate_orf(cds, allowed).rstrip("*"), profile)
+
+    cands = []                          # (signed codons, candidate CDS); upstream first
+    for k in range(1, _START_WINDOW_CODONS + 1):
+        up = upstream(3 * k)
+        if up[:3] in _STOP:
+            break
+        if up[:3] in allowed:
+            cands.append((-k, up + seq))
+    for k in range(1, _START_WINDOW_CODONS + 1):
+        if 3 * k > first_len - _MIN_FIRST_EXON_BP:
+            break
+        c = seq[3 * k:3 * k + 3]
+        if c in _STOP:
+            break
+        if c in allowed:
+            cands.append((k, seq[3 * k:]))
+    if not cands:
+        return False
+    scored = [(support(cds), cds[:3] == "ATG", -abs(k), k, cds) for k, cds in cands]
+    best = max(scored, key=lambda x: x[:3])      # max keeps the first of equals: upstream
+    if best[0] < support(seq):
+        return False
+    k, cds = best[3], best[4]
+    saved = (list(feat.exons or []), feat.start, feat.end)
+    _move_5p(feat, g, -3 * k)
+    if _coords.extract(g, feat, glen).upper() != cds:
+        feat.exons, feat.start, feat.end = saved
+        print("      WARNING: start-codon move failed its own check for %s; left unchanged" % gene)
+        return False
+    feat.notes.append(MOVED_5P + "start moved from %s to %s, %d codon(s) %s; %s is not a "
+                      "start codon" % (codons[0], cds[:3], abs(k),
+                                       "upstream" if k < 0 else "downstream", codons[0]))
+    return True
+
+
+def refine_all(annotations, genome_seq, gene_catalog=None, protein_db=None):
     gene_catalog = gene_catalog or {}
     n = 0
     for f in annotations:
@@ -374,4 +495,19 @@ def refine_all(annotations, genome_seq, gene_catalog=None):
         except Exception as exc:                      # noqa: BLE001
             print("      WARNING: terminal-stop snap failed for %s (%s: %s)"
                   % (getattr(f, "gene_name", "?"), type(exc).__name__, exc))
+    # Start codon — last, on the final exons and 3' end: a first codon that is not a start
+    # codon moves to the best-supported start codon nearby, and the CDS keeps its warning.
+    moved, cache = 0, {}
+    for f in annotations:
+        if getattr(f, "gene_type", None) != "CDS": continue
+        if getattr(f, "exon_strands", None): continue
+        if getattr(f, "is_pseudogene", False): continue
+        try:
+            moved += _rescue_invalid_start(f, genome_seq, protein_db, cache)
+        except Exception as exc:                      # noqa: BLE001
+            print("      WARNING: start-codon rescue failed for %s (%s: %s)"
+                  % (getattr(f, "gene_name", "?"), type(exc).__name__, exc))
+    if moved:
+        print("      Start codon moved: %d CDS whose first codon was not a start codon "
+              "(kept NEEDS_REVIEW)" % moved)
     return n
