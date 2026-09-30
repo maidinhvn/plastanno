@@ -305,8 +305,9 @@ def run_exonerate_gene(genome_seq, gene_name,
     # catalog region gives no hit that could pass that filter, the gene is looked for in both IR
     # copies. "No hit at all" was not enough: the 2 kb window around the SSC reaches a fragment of
     # an IR copy sitting near the boundary (Cyperaceae ndhA), and that fragment is then dropped.
-    # What the IR search finds is marked for review: it lies outside the gene's catalog region.
-    from ..core.finalize import OUT_OF_REGION
+    # What the IR search finds is marked for review. The note does not claim the gene lies outside
+    # its catalog region: ycf1 straddling SSC/IRa is found this way too.
+    from ..core.finalize import IR_SEARCH
     in_ir = gene_name in IR_GENES or region_key in ("IRb", "IR")
     irs = [ir_boundaries.get(r) for r in ("IRb", "IRa") if ir_boundaries.get(r)]
     exp = cat.get("expected_len")
@@ -315,8 +316,8 @@ def run_exonerate_gene(genome_seq, gene_name,
             and len(irs) == 2:
         ir_hits = search(irs)
         for h in ir_hits:
-            h.notes.append(OUT_OF_REGION + "found in the inverted repeat, outside its catalog "
-                           "region (%s)" % region_key)
+            h.notes.append(IR_SEARCH + "found by searching the inverted repeats, because its "
+                           "catalog region (%s) gave no complete hit" % region_key)
         all_hits = [h for h in all_hits
                     if not any(_coords.overlap_bp(h, k, genome_len) > 0 for k in ir_hits)] + ir_hits
 

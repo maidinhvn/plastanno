@@ -166,10 +166,12 @@ COMPLETED_3P = "[3' completed] "
 # codon and which it moved to one nearby; submission_check keeps it NEEDS_REVIEW for the same
 # reason: a valid start codon does not make it the right one.
 MOVED_5P = "[start moved] "
-# Engine A marks a CDS it found in the inverted repeat because its catalog region held no usable
-# hit (an IR that has expanded over the region). submission_check keeps it NEEDS_REVIEW: a gene
-# found outside its usual region is worth a look even when its ORF is valid.
-OUT_OF_REGION = "[outside its region] "
+# Engine A marks a CDS it found by searching the inverted repeats because its catalog region
+# gave no complete hit: the IR has expanded over the gene, or the gene straddles the region's
+# boundary (ycf1 at SSC/IRa). submission_check keeps it NEEDS_REVIEW: a gene found by that second
+# search is worth a look even when its ORF is valid. The label does not say "outside its region",
+# which is wrong for a gene straddling the boundary.
+IR_SEARCH = "[IR search] "
 # Initiation codons of NCBI genetic code 11, the ones table2asn accepts as a CDS start.
 TABLE11_STARTS = ("ATG", "GTG", "TTG", "CTG", "ATT", "ATC", "ATA")
 STOP_CODONS = ("TAA", "TAG", "TGA")
@@ -197,8 +199,8 @@ def submission_check(annotations, genome_seq, genome_len=None):
     So does a CDS whose 3' end the terminal-stop step completed or trimmed (a COMPLETED_3P note),
     or whose start the start-codon step moved (a MOVED_5P note), even when its ORF is now valid:
     the repair made it pass the validator, and a clean ORF says nothing about whether its start
-    or its splice sites are the right ones. So does a CDS Engine A found in the inverted repeat,
-    outside its catalog region (an OUT_OF_REGION note).
+    or its splice sites are the right ones. So does a CDS Engine A found by searching the
+    inverted repeats because its catalog region gave no complete hit (an IR_SEARCH note).
     Nothing else changes: no coordinate, no feature, no confidence. That is why this runs
     after revoke_implausible_rescues. Inside finalize_qc its flags would feed that gate and
     remove rescued CDS, which is a change to the annotation, not a warning about it.
@@ -239,7 +241,7 @@ def submission_check(annotations, genome_seq, genome_len=None):
             problems.append("%d internal stop codon(s)" % internal)
         completed = [str(n)[len(COMPLETED_3P):] for n in ann.notes if str(n).startswith(COMPLETED_3P)]
         moved = [str(n)[len(MOVED_5P):] for n in ann.notes if str(n).startswith(MOVED_5P)]
-        outside = [str(n)[len(OUT_OF_REGION):] for n in ann.notes if str(n).startswith(OUT_OF_REGION)]
+        outside = [str(n)[len(IR_SEARCH):] for n in ann.notes if str(n).startswith(IR_SEARCH)]
         if not problems and not completed and not moved and not outside:
             continue
         was = ann.flag
@@ -262,7 +264,7 @@ def submission_check(annotations, genome_seq, genome_len=None):
         failing.append((ann, problems
                         or ["start codon moved by the pipeline"] * bool(moved)
                         + ["3' end completed by the pipeline"] * bool(completed)
-                        + ["found outside its catalog region"] * bool(outside)))
+                        + ["found by searching the inverted repeats"] * bool(outside)))
     return failing
 
 

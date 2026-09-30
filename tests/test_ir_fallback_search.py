@@ -13,7 +13,7 @@ gene is searched in IRb and IRa too:
   - "no hit at all" is not the trigger: the search window around the SSC can reach a fragment of
     an IR copy near the boundary (Cyperaceae ndhA), and that fragment used to block the IR search;
   - IR hits replace the region hits they overlap;
-  - each carries an "[outside its region]" note, and finalize.submission_check keeps such a CDS
+  - each carries an "[IR search]" note, and finalize.submission_check keeps such a CDS
     NEEDS_REVIEW (in Knoxia the IR search found a ycf1 its reference does not annotate at all).
 
 Exonerate is replaced by a fake that "finds" the gene wherever its copies lie inside the region
@@ -25,7 +25,7 @@ import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from plastanno.core.feature import Feature                                   # noqa: E402
-from plastanno.core.finalize import submission_check, SUBMIT, OUT_OF_REGION  # noqa: E402
+from plastanno.core.finalize import submission_check, SUBMIT, IR_SEARCH  # noqa: E402
 from plastanno.identify import engine_a as EA                                # noqa: E402
 from plastanno.output.writers import write_report                           # noqa: E402
 
@@ -83,7 +83,7 @@ def run(gene, irb=IRS):
     return EA.run_exonerate_gene(SEQ, gene, DB, irb, CAT, threads=1)
 
 
-note = lambda f: [n for n in f.notes if str(n).startswith(OUT_OF_REGION)]
+note = lambda f: [n for n in f.notes if str(n).startswith(IR_SEARCH)]
 spans = lambda fs: sorted((f.start, f.end, f.strand) for f in fs)
 asked = lambda: sorted({a[1:] for a in ASKED})
 
@@ -92,7 +92,8 @@ COPIES["ndhA"] = [(124000, 126100, 1), (143000, 145100, -1)]      # one full cop
 feats = run("ndhA")
 check("both IR copies are found", spans(feats), [(124000, 126100, 1), (143000, 145100, -1)])
 check("... each with the note", [note(f) for f in feats],
-      [[OUT_OF_REGION + "found in the inverted repeat, outside its catalog region (SSC)"]] * 2)
+      [[IR_SEARCH + "found by searching the inverted repeats, because its catalog region (SSC) "
+        "gave no complete hit"]] * 2)
 check("... after the catalog region was searched first", [a[1:] for a in ASKED][:1], [IRS["SSC"]])
 
 print("--- a fragment of an IR copy inside the SSC window does not block the search ---")
@@ -134,16 +135,17 @@ cds = run("ndhA")
 anns = cds
 bad = submission_check(anns, SEQ)
 check("both are valid ORFs: nothing NCBI would reject", [p for _, p in bad],
-      [["found outside its catalog region"]] * 2)
+      [["found by searching the inverted repeats"]] * 2)
 check("submission_check keeps both IR-found CDS NEEDS_REVIEW", [a.flag for a in cds], ["NEEDS_REVIEW"] * 2)
 sub = [str(n) for n in cds[0].notes if str(n).startswith(SUBMIT)]
 check("... with a note saying where it was found",
-      any("it was found in the inverted repeat, outside its catalog region (SSC)" in n for n in sub), True)
+      any("it was found by searching the inverted repeats, because its catalog region (SSC) gave no "
+          "complete hit" in n for n in sub), True)
 with tempfile.TemporaryDirectory() as d:
     rep = os.path.join(d, "r.report")
     write_report(anns, "TEST", L, {}, [], 1.0, rep)
     txt = open(rep).read()
-check("the report lists them apart", "found in the inverted repeat, outside their catalog region" in txt, True)
+check("the report lists them apart", "pass, but were found by searching the inverted repeats" in txt, True)
 
 print("\n%d checks, %d failed" % (RUN[0], len(FAIL)))
 sys.exit(1 if FAIL else 0)
