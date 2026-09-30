@@ -156,6 +156,82 @@ def finalize_qc(annotations, genome_seq, boundary_conflict_bp=None, genome_len=N
     return annotations
 
 
+# Notes written by submission_check carry this prefix, so a second pass can clear them.
+SUBMIT = "[submission] "
+# Initiation codons of NCBI genetic code 11, the ones table2asn accepts as a CDS start.
+TABLE11_STARTS = ("ATG", "GTG", "TTG", "CTG", "ATT", "ATC", "ATA")
+STOP_CODONS = ("TAA", "TAG", "TGA")
+
+
+def submission_check(annotations, genome_seq, genome_len=None):
+    """Flag every CDS that NCBI's validator would reject. Changes flags and notes only.
+
+    Until this check, most CDS that NCBI's validator rejects reached the user flagged MEDIUM
+    or HIGH: the pipeline knew the codons and said nothing.
+
+    Three checks are applied, those of table2asn for genetic code 11, to each CDS as the
+    writers will write it:
+
+      no valid start  the first codon is not a table-11 initiation codon, and the CDS is not
+                      written with the RNA-editing exception (rna_edited_start)
+      no stop         the 3' end is not a stop codon
+      internal stop   a stop codon occurs before the last codon
+
+    A CDS written as partial (orf_incomplete: '<' and '>' on both ends) is exempt from the
+    first two, exactly as it is for the validator, but not from the third. Pseudogenes are
+    written without a CDS and are skipped.
+
+    A failing CDS becomes NEEDS_REVIEW, with a note naming each problem and the flag it had.
+    Nothing else changes: no coordinate, no feature, no confidence. That is why this runs
+    after revoke_implausible_rescues. Inside finalize_qc its flags would feed that gate and
+    remove rescued CDS, which is a change to the annotation, not a warning about it.
+
+    Idempotent. The notes this function wrote are cleared first, and a flag it lowered is
+    lowered again from the same evidence, with the same note: the flag it found is read back
+    from its own earlier note, so a second call does not report "NEEDS_REVIEW" as the flag it
+    lowered. It never raises a flag back up. Restoring flags is finalize_qc's job, which is
+    why this must run after it (and after nothing that moves a coordinate).
+    Returns [(feature, [problem, ...])].
+    """
+    import re
+    if genome_len is None:
+        genome_len = len(genome_seq) or None
+    failing = []
+    for ann in annotations:
+        lowered_from = None
+        for n in ann.notes:
+            m = re.search(r"flag lowered from (\w+)", str(n)) if str(n).startswith(SUBMIT) else None
+            if m:
+                lowered_from = m.group(1)
+        ann.notes = [n for n in ann.notes if not str(n).startswith(SUBMIT)]
+        if ann.gene_type != "CDS" or ann.is_pseudogene:
+            continue
+        seq = _coords.extract(genome_seq, ann, genome_len).upper()
+        whole = len(seq) - len(seq) % 3
+        codons = [seq[i:i + 3] for i in range(0, whole, 3)]
+        problems = []
+        if not getattr(ann, "orf_incomplete", False):
+            if codons and codons[0] not in TABLE11_STARTS and \
+                    not getattr(ann, "rna_edited_start", False):
+                problems.append("no valid start codon (%s)" % codons[0])
+            if len(seq) % 3 or not codons or codons[-1] not in STOP_CODONS:
+                problems.append("no stop codon at the 3' end (%s)" % (seq[-3:] or "-"))
+        # the last codon is the terminal stop when there is one, and is examined above
+        internal = sum(1 for c in codons[:-1] if c in STOP_CODONS)
+        if internal:
+            problems.append("%d internal stop codon(s)" % internal)
+        if not problems:
+            continue
+        was = ann.flag
+        if was == "NEEDS_REVIEW" and lowered_from:     # lowered by this function's earlier pass
+            was = lowered_from
+        ann.flag = "NEEDS_REVIEW"
+        ann.notes.append(SUBMIT + "would fail NCBI validation: " + "; ".join(problems)
+                         + ("" if was == "NEEDS_REVIEW" else "; flag lowered from " + was))
+        failing.append((ann, problems))
+    return failing
+
+
 def assign_cds_products(annotations, gene_catalog):
     """Give each CDS its protein name from the catalog, once, before output.
 

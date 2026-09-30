@@ -317,6 +317,13 @@ def run(
     if _unnamed:
         print(f"      CDS without a protein name in the catalog: {_unnamed} "
               "(the gene symbol is written as /product)")
+    # Last of all: flag every CDS that NCBI's validator would reject. It runs after the
+    # rescue gate on purpose -- it warns about the annotation and must not change it.
+    from .core.finalize import submission_check
+    _unsubmittable = submission_check(annotations, genome_seq)
+    if _unsubmittable:
+        print("      CDS that would fail NCBI validation: %d (flagged NEEDS_REVIEW, "
+              "listed in the report)" % len(_unsubmittable))
 
     high   = sum(1 for a in annotations if a.flag == "HIGH")
     medium = sum(1 for a in annotations if a.flag == "MEDIUM")

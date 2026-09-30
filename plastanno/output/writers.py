@@ -622,6 +622,22 @@ def write_report(annotations, accession, genome_len,
         f.write(f"  MEDIUM      : {medium}\n")
         f.write(f"  NEEDS_REVIEW: {review}\n")
 
+        # Every CDS NCBI's validator would reject (finalize.submission_check), in one place,
+        # so a submitter knows exactly what to fix before running table2asn.
+        from ..core.finalize import SUBMIT
+        failing = [a for a in cds if any(str(n).startswith(SUBMIT) for n in a.notes)]
+        f.write("\nSubmission check (NCBI table2asn CDS rules, genetic code 11):\n")
+        if not failing:
+            f.write("  No CDS would fail NCBI validation.\n")
+        else:
+            f.write(f"  {len(failing)} CDS would fail NCBI validation; "
+                    "fix or mark them before submitting:\n")
+            for a in sorted(failing, key=lambda x: x.start):
+                note = next(str(n) for n in a.notes if str(n).startswith(SUBMIT))
+                why = note[len(SUBMIT):].replace("would fail NCBI validation: ", "")
+                f.write(f"  {a.gene_name:<10} {a.start + 1}..{a.end} "
+                        f"({'+' if a.strand == 1 else '-'})  {why}\n")
+
         # Genes needing review
         if review > 0:
             f.write(f"\nGenes needing review:\n")
