@@ -94,7 +94,7 @@ conda config --set channel_priority strict   # recommended for bioconda
 conda create -n plastanno -c conda-forge -c bioconda plastanno
 conda activate plastanno
 
-# REQUIRED before the first run: download the reference database (~266 MB)
+# REQUIRED before the first run: download the reference database (~266 MB; ~690 MB unpacked)
 plastanno fetch-db
 ```
 
@@ -133,7 +133,7 @@ is no self-update command:
 conda activate plastanno
 conda update -c conda-forge -c bioconda plastanno     # to the newest release
 # or pin an exact release:
-conda install -c conda-forge -c bioconda plastanno=3.0.1
+conda install -c conda-forge -c bioconda plastanno=3.1.0
 ```
 
 Check what you are actually running (report this when asking for support, and
@@ -169,23 +169,34 @@ inside the cloned repository**, so the leading `git clone && cd` matters:
 git clone https://github.com/maidinhvn/plastanno.git
 cd plastanno
 
-# create the environment (Python deps + all external tools) from the pinned file
+# create the environment (Python deps + all external tools) from environment.yml
 conda env create -f environment.yml
 conda activate plastanno
 
 # install the `plastanno` command from this checkout
 pip install .
 
-# REQUIRED before the first run: download the reference database (~266 MB)
+# REQUIRED before the first run: download the reference database (~266 MB; ~690 MB unpacked)
 plastanno fetch-db
 ```
 
-`environment.yml` pins the channels and lists every dependency. To build the
-environment by hand instead, the equivalent one-liner is:
+`environment.yml` sets the channels and lists every dependency; it does not pin
+versions.
+- 3.1.0 was checked in fresh environments built from it and from the Bioconda recipe
+  (Python 3.10 and 3.14). Both gave the same annotation as the development
+  environment.
+- **On an older Anaconda or Miniconda whose conda still uses the classic solver,
+  `conda env create` can take about half an hour.** We measured 27 minutes, against
+  about 2 with mamba.
+- Use `mamba env create -f environment.yml` instead, or switch conda to the libmamba
+  solver as shown above.
+
+To build the environment by hand instead, the equivalent one-liner is:
 
 ```bash
 conda create -n plastanno -c conda-forge -c bioconda \
-    python=3.10 biopython pandas matplotlib platformdirs blast exonerate hmmer aragorn
+    python=3.10 biopython pandas matplotlib platformdirs numpy scipy \
+    blast exonerate hmmer aragorn trnascan-se
 ```
 
 (Same channel-order / Terms-of-Service notes as above apply.) You can also skip
@@ -301,6 +312,27 @@ summary, and `..._map.png` for the circular map.
 | `<acc>.report` | QC summary: IR boundaries, confidence distribution, a categorised functional gene table, and features flagged for review |
 | `<acc>_map.png/.pdf/.svg` | circular plastome map (unless `--no-plot`) |
 
+### Flags and review notes
+
+Every CDS, tRNA and rRNA carries a confidence flag: `HIGH`, `MEDIUM` or
+`NEEDS_REVIEW`. It is written in the feature's `/note` in the `.gb`, and in the GFF3.
+
+From 3.1.0, a CDS also stays `NEEDS_REVIEW` when its note carries one of these
+markers:
+
+| Marker | Meaning |
+|---|---|
+| `[submission]` | NCBI's validator (table2asn, genetic code 11) would reject the CDS as written. The note says why (no valid start codon, no stop codon, internal stop codons) and which flag the CDS had. |
+| `[3' completed]` | the pipeline trimmed the CDS back to its first in-frame stop, or extended it to the next one |
+| `[start moved]` | the pipeline moved a start that was not a start codon to the best-supported start nearby |
+| `[IR search]` | the gene was found by searching the inverted repeats, because its catalog region gave no complete hit |
+
+- A repair makes the ORF valid, but it does not prove the gene model right, so a
+  repaired CDS stays under review.
+- The `.report` lists these CDS in its "Submission check" section.
+- Partial CDS and the RNA-editing exception are exempt from the check, as they are
+  for the validator.
+
 ## Databases
 
 `database/` holds the reference data the engines use: genus-representative BLAST
@@ -308,7 +340,7 @@ databases, per-gene reference proteins, profile HMMs, a taxonomically tiered tRN
 database, an intron-exon database, full-length rRNA databases, a per-gene exon
 panel and length templates, and `gene_catalog.json`.
 
-**The large reference databases (~266 MB compressed download, ~700 MB once
+**The large reference databases (~266 MB compressed download, ~690 MB once
 extracted) are not in this Git repository** —
 GitHub's per-file size limit makes them unsuitable for version control. Only the
 small runtime configs (`gene_catalog.json`, `boundary_db/`, `exon_templates.json`)
@@ -327,8 +359,8 @@ three ways:
 3. **Rebuild:** `python3 scripts/build/build_all.py` (see that script's header
    for inputs).
 
-For a ready-to-run copy that already bundles the databases, use the release
-tarball instead of cloning.
+The release tarball on GitHub holds the source code only. The database is always
+fetched separately, as above.
 
 ## Benchmarking
 

@@ -1,6 +1,6 @@
 # Plastanno architecture
 
-Current as of 3.0.1. Where this document and the code disagree, the code is
+Current as of 3.1.0. Where this document and the code disagree, the code is
 right — the previous version of this file described the pre-3.0.0 scoring and
 was three months stale.
 
@@ -14,11 +14,12 @@ that file are the authoritative numbering.
 | 1 | `pipeline` | read a single plastome record from FASTA |
 | 2 | `identify/ir_detector` | self-BLASTN; longest minus-strand HSP ≥ 10 kb → `{LSC, IRb, SSC, IRa}`. Returns `None` for IR-lacking plastomes, and the whole genome is then one `LSC` region |
 | 3 | `identify/closest_rel` | BLAST against `blast_db/genus_reps`; ranked neighbours for the tRNA search |
-| 4A | `identify/engine_a` | Exonerate `protein2genome` per gene against `protein_db/`, both IR copies for IR genes; rRNA via BLAST → `s_ref` |
+| 4A | `identify/engine_a` | Exonerate `protein2genome` per gene against `protein_db/`, both IR copies for IR genes; a gene whose catalog region gives no hit reaching 0.6× its expected length is also searched in IRb and IRa, and those hits carry an `[IR search]` note; rRNA via BLAST → `s_ref` |
 | 4B | `identify/engine_b` | 6-frame translation → `hmmsearch` (CDS); ARAGORN + tRNAscan-SE + BLAST (tRNA); BLAST (rRNA) → `s_model` |
 | 5 | `core/reconcile` | candidate selection — see below |
 | 6 | `annotate/special_cases` | CAU disambiguation, *rps12* trans-splicing, short first exons, internal-stop QC |
-| 6b | `annotate/`, `identify/trna_hybrid`, `identify/intron_refine` | boundary refinement: multi-exon CDS splice sites, intron-free tRNA ends, intron-bearing tRNA exons |
+| 6b | `annotate/refine_splice`, `identify/trna_hybrid`, `identify/intron_refine` | boundary refinement. `refine_all` runs, in order: exon-panel junctions of multi-exon CDS (a gene marked `keep_ends`, rpl2, keeps its ends); the terminal stop (trim a short read-through, complete a truncated 3' end; `[3' completed]`); the start codon (move a start that is not a start codon to the best-supported one nearby; `[start moved]`). Then intron-free tRNA ends and intron-bearing tRNA exons |
+| 6c | `core/finalize`, `core/reconcile` | `finalize_qc`, `revoke_implausible_rescues`, CDS products from the catalog, then `submission_check`: a CDS that NCBI's validator would reject, or that carries one of the three repair notes, is NEEDS_REVIEW (`[submission]`) |
 | 7 | `output/writers` | `.gb .gff3 .tbl .faa .ffn .frn .report .provenance.json .trna_alternatives.tsv` |
 
 Step 6b runs **after** everything that decides which loci exist. That ordering is

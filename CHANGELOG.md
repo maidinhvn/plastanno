@@ -4,7 +4,87 @@ All notable changes to Plastanno. Benchmarks are measured on the DEV split
 (n=123 shared genomes) against reference GenBank annotations; the held-out set is
 never used during development.
 
-## [Unreleased]
+## [3.1.0] — 2026-10-01
+
+A minor release: the same commands, options and reference database (no `fetch-db`
+needed after upgrading), with new behaviour that changes annotations. A CDS that
+NCBI's validator would reject is now flagged. A truncated 3' end is completed and a
+short read-through trimmed. A start that is not a start codon is moved to the
+best-supported one nearby. A gene whose catalog region gives no usable hit is also
+searched in the inverted repeats. The exon panel now covers rpl2.
+
+**Every repair is marked in the CDS's note and keeps the CDS NEEDS_REVIEW.** More CDS
+are flagged for review than in 3.0.1, by design: a repair makes an ORF valid, but it
+does not prove the gene model right.
+
+How it was checked:
+- Each change was validated on development genomes against a criterion fixed before
+  the run.
+- The release as a whole was checked against 3.0.1 on 200 development genomes not used
+  before: angiosperms, non-angiosperms, orchids and ndh-less plastomes. It passed every
+  locked criterion but one, which was accepted with its reason (see Known
+  limitations).
+- Fresh environments were built from `environment.yml` and from the bioconda recipe
+  (Python 3.10 and 3.14). On the genomes checked, they gave the same annotation as the
+  development environment.
+- Measured accuracy will be published with the manuscript.
+
+### Added
+
+- **A submission check.** Each CDS, as the writers will write it, goes through
+  table2asn's three CDS checks for genetic code 11: a valid start codon, a stop
+  codon, no internal stop codon.
+  - The RNA-editing exception and partial CDS are exempt, exactly as they are for the
+    validator.
+  - A failing CDS becomes NEEDS_REVIEW with a `[submission]` note naming the problem
+    and the flag it had.
+  - The `.report` lists every such CDS in a new "Submission check" section.
+  - Flags and notes only: no coordinate, feature or confidence changes.
+- **3' ends are completed and read-throughs trimmed.** The terminal-stop step used to
+  look only 3 codons ahead, within a length guard. It now:
+  - trims a CDS back to its first in-frame stop when that stop lies within its last 5
+    codons;
+  - takes a stop within 3 codons silently, within the old length guard, as 3.0.1 did;
+  - otherwise completes a CDS with no internal stop to the first in-frame stop within
+    100 codons, reading round the origin.
+
+  Trims and completions carry a `[3' completed]` note.
+- **A start that is not a start codon is moved.**
+  - When a CDS starts on a codon that is neither a table-11 initiation codon nor one of
+    the gene's special start codons, a last pass looks up to 10 codons either way for
+    ATG or one of those codons.
+  - It never crosses an in-frame stop and stays inside the first exon.
+  - It takes the start the reference proteins' N-termini support best.
+  - Starts that are valid but differ from a reference are not touched.
+  - A moved CDS carries a `[start moved]` note.
+- **A gene is searched in the inverted repeats when its catalog region gives no usable
+  hit.**
+  - Where the IR has expanded over most of the SSC, the SSC genes sit in the IR
+    copies. ndhA, the SSC gene with an intron, was then lost whole.
+  - When no hit in the catalog region reaches 0.6× the gene's expected length, Engine A
+    also searches IRb and IRa, and the IR hits replace the region hits they overlap.
+  - Such a CDS carries an `[IR search]` note.
+- **rpl2 is in the exon panel.** Exonerate starts rpl2's exon 2 one codon late against
+  almost every reference. The panel gains four rpl2 references, and the rpl2 exon
+  template takes their exon lengths. rpl2 is marked `keep_ends`: the panel moves its
+  junction and leaves its 5' and 3' ends to the start-codon and terminal-stop passes,
+  because many lineages start rpl2 on an edited ACG.
+- **A warning when the exon panel cannot be searched.** A missing or unreadable panel
+  database used to skip junction refinement for every panel gene in silence. The first
+  failure now prints one WARNING naming the cause.
+- `submission_check` keeps every CDS with a `[3' completed]`, `[start moved]` or
+  `[IR search]` note NEEDS_REVIEW, whatever its ORF. The `.report` lists these CDS
+  apart from those that would fail validation.
+- **Eight new test files, 181 checks:**
+  - `test_submission_check.py`;
+  - `test_terminal_stop.py`;
+  - `test_start_rescue.py`;
+  - `test_ir_fallback_search.py`;
+  - `test_panel_keep_ends.py`;
+  - `test_panel_warning.py`;
+  - `test_renamed_gene_profile.py`;
+  - `test_synonym_lookups.py`, which checks the reference-protein files only when the
+    downloaded database is present.
 
 ### Changed
 
@@ -12,6 +92,22 @@ never used during development.
   outlived: the version is 3.x. The README title, `--help`, the database builder, the
   report header and the DEFINITION line written when no organism is given now say
   "Plastanno".
+- **More CDS are flagged NEEDS_REVIEW**, by design: the repairs above and the
+  submission check each keep a CDS under review.
+
+### Fixed
+
+- **psbN's reference proteins were not found after the rename.**
+  - Step 6 renames pbf1 to psbN before anything else, but the protein database keeps
+    psbN's proteins in `pbf1.fasta`.
+  - So from 3.0.1 on, no psbN was ORF-completed, and a psbN call a few codons short of
+    its stop stayed short.
+  - The lookup now falls back to the file of a name that `SYNONYMS` maps to the gene.
+  - A test walks every renamed gene's lookups: proteins, catalog, special start codons,
+    exon panel and templates.
+- **The README did not say which F1 the benchmark scripts report.** With the default
+  ±60 bp, a call one base off counts as exact. The aggregate script also reports the
+  F1 at exact coordinates. Neither is a published accuracy figure.
 
 ### Known limitations
 
