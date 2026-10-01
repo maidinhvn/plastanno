@@ -8,10 +8,11 @@ never used during development.
 
 A minor release: the same commands, options and reference database (no `fetch-db`
 needed after upgrading), with new behaviour that changes annotations. A CDS that
-would fail NCBI validation is now flagged, with the reason, so it can be fixed before submission. A truncated 3' end is completed and a
-short read-through trimmed. A start that is not a start codon is moved to the
-best-supported one nearby. A gene whose catalog region gives no usable hit is also
-searched in the inverted repeats. The exon panel now covers rpl2.
+would fail NCBI validation is now flagged, with the reason, so it can be fixed before
+submission. A truncated 3' end is completed and a short read-through trimmed. A start
+that is not a start codon is moved to the best-supported one nearby. A gene whose
+catalog region gives no usable hit is also searched in the inverted repeats. The exon
+panel now covers rpl2.
 
 **Every repair is marked in the CDS's note and keeps the CDS NEEDS_REVIEW.** More CDS
 are flagged for review than in 3.0.1, by design: a repair makes an ORF valid, but it
