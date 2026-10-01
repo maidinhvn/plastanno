@@ -33,6 +33,14 @@ authors:
     given-names: "Tae-Jin"
     affiliation: "Seoul National University"
 version: "3.1.0"
+doi: "10.5281/zenodo.23073714"
+identifiers:
+  - type: doi
+    value: "10.5281/zenodo.23073714"
+    description: "Plastanno, all versions (Zenodo concept DOI)"
+  - type: doi
+    value: "10.5281/zenodo.23073715"
+    description: "Plastanno 3.1.0"
 date-released: "2026-10-01"
 license: MIT
 repository-code: "https://github.com/maidinhvn/plastanno"

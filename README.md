@@ -3,6 +3,7 @@
 **A hybrid, self-evaluating chloroplast-genome (plastome) annotator.**
 
 [![CI](https://github.com/maidinhvn/plastanno/actions/workflows/ci.yml/badge.svg)](https://github.com/maidinhvn/plastanno/actions/workflows/ci.yml)
+[![Software (Zenodo)](https://zenodo.org/badge/DOI/10.5281/zenodo.23073714.svg)](https://doi.org/10.5281/zenodo.23073714)
 [![Reference databases (Zenodo)](https://zenodo.org/badge/DOI/10.5281/zenodo.20807994.svg)](https://doi.org/10.5281/zenodo.20807994)
 
 Given a plastome FASTA, Plastanno predicts CDS, tRNA and rRNA features and writes
@@ -403,10 +404,15 @@ genomes rather than within one.
 
 ## Citation
 
-If you use Plastanno, please cite the software (GitHub's "Cite this repository"
-reads `CITATION.cff`) and the reference-database archive on Zenodo:
-[doi.org/10.5281/zenodo.20807994](https://doi.org/10.5281/zenodo.20807994). A
-manuscript describing the tool is in preparation.
+If you use Plastanno, please cite both of these, archived on Zenodo:
+- **The software:** [doi.org/10.5281/zenodo.23073714](https://doi.org/10.5281/zenodo.23073714).
+  This DOI covers all versions; 3.1.0 has its own DOI,
+  [10.5281/zenodo.23073715](https://doi.org/10.5281/zenodo.23073715). GitHub's "Cite this
+  repository" reads `CITATION.cff`.
+- **The reference-database archive:**
+  [doi.org/10.5281/zenodo.20807994](https://doi.org/10.5281/zenodo.20807994).
+
+A manuscript describing the tool is in preparation.
 
 ## License
 
