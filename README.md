@@ -403,9 +403,10 @@ genomes rather than within one.
 
 ## Citation
 
-If you use Plastanno, please cite the manuscript (in preparation; see `docs/`) and
-the reference-database archive on Zenodo:
-[doi.org/10.5281/zenodo.20807994](https://doi.org/10.5281/zenodo.20807994).
+If you use Plastanno, please cite the software (GitHub's "Cite this repository"
+reads `CITATION.cff`) and the reference-database archive on Zenodo:
+[doi.org/10.5281/zenodo.20807994](https://doi.org/10.5281/zenodo.20807994). A
+manuscript describing the tool is in preparation.
 
 ## License
 

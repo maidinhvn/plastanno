@@ -33,7 +33,7 @@
       "affiliation": "Seoul National University"
     }
   ],
-  "license": "MIT",
+  "license": "mit",
   "keywords": [
     "plastome",
     "chloroplast genome",
@@ -44,7 +44,6 @@
     {
       "identifier": "10.5281/zenodo.20807994",
       "relation": "requires",
-      "scheme": "doi",
       "resource_type": "dataset"
     }
   ]

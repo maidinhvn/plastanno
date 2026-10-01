@@ -1,8 +1,12 @@
 # Changelog
 
-All notable changes to Plastanno. Benchmarks are measured on the DEV split
-(n=123 shared genomes) against reference GenBank annotations; the held-out set is
-never used during development.
+All notable changes to Plastanno. Changes are developed and checked on development
+genomes (`splits/dev_set.txt`), each against a criterion fixed before the run, and
+genomes set aside for the final evaluation are kept out of that work. The reference
+databases were, however, built before the evaluation split
+(`docs/DATABASE_PROVENANCE.md`). That is why the held-out figures quoted with 3.0.0
+were withdrawn, and why no overall accuracy figure is quoted from 3.0.1 on. Figures
+in older entries were measured as each entry states, and are kept as a record.
 
 ## [3.1.0] — 2026-10-01
 
