@@ -19,7 +19,7 @@ that file are the authoritative numbering.
 | 5 | `core/reconcile` | candidate selection — see below |
 | 6 | `annotate/special_cases` | CAU disambiguation, *rps12* trans-splicing, short first exons, internal-stop QC |
 | 6b | `annotate/refine_splice`, `identify/trna_hybrid`, `identify/intron_refine` | boundary refinement. `refine_all` runs, in order: exon-panel junctions of multi-exon CDS (a gene marked `keep_ends`, rpl2, keeps its ends); the terminal stop (trim a short read-through, complete a truncated 3' end; `[3' completed]`); the start codon (move a start that is not a start codon to the best-supported one nearby; `[start moved]`). Then intron-free tRNA ends and intron-bearing tRNA exons |
-| 6c | `core/finalize`, `core/reconcile` | `finalize_qc`, `revoke_implausible_rescues`, CDS products from the catalog, then `submission_check`: a CDS that NCBI's validator would reject, or that carries one of the three repair notes, is NEEDS_REVIEW (`[submission]`) |
+| 6c | `core/finalize`, `core/reconcile` | `finalize_qc`, `revoke_implausible_rescues`, CDS products from the catalog, then `submission_check`: a CDS that would fail NCBI validation, or that carries one of the three repair notes, is NEEDS_REVIEW (`[submission]`) |
 | 7 | `output/writers` | `.gb .gff3 .tbl .faa .ffn .frn .report .provenance.json .trna_alternatives.tsv` |
 
 Step 6b runs **after** everything that decides which loci exist. That ordering is

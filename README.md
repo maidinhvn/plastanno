@@ -322,7 +322,7 @@ markers:
 
 | Marker | Meaning |
 |---|---|
-| `[submission]` | NCBI's validator (table2asn, genetic code 11) would reject the CDS as written. The note says why (no valid start codon, no stop codon, internal stop codons) and which flag the CDS had. |
+| `[submission]` | the CDS as written would fail NCBI validation (table2asn, genetic code 11), and must be fixed before GenBank accepts the record; the rest of the record is not affected. The note says why (no valid start codon, no stop codon, internal stop codons) and which flag the CDS had. |
 | `[3' completed]` | the pipeline trimmed the CDS back to its first in-frame stop, or extended it to the next one |
 | `[start moved]` | the pipeline moved a start that was not a start codon to the best-supported start nearby |
 | `[IR search]` | the gene was found by searching the inverted repeats, because its catalog region gave no complete hit |
