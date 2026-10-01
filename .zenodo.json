@@ -5,8 +5,32 @@
   "creators": [
     {
       "name": "Trinh, Hoai Vu",
-      "affiliation": "Seoul National University; An Giang University",
+      "affiliation": "Seoul National University; An Giang University, Vietnam National University Ho Chi Minh City",
       "orcid": "0000-0001-8178-0800"
+    },
+    {
+      "name": "Lado, Jickerson Pitogo",
+      "affiliation": "Seoul National University; University of the Philippines Los Baños; International Rice Research Institute"
+    },
+    {
+      "name": "Maulana, Faizal",
+      "affiliation": "Seoul National University; IPB University"
+    },
+    {
+      "name": "Huynh, Cao The Cuong",
+      "affiliation": "An Giang University, Vietnam National University Ho Chi Minh City; Seoul National University"
+    },
+    {
+      "name": "Park, Young Sang",
+      "affiliation": "Seoul National University"
+    },
+    {
+      "name": "Park, Jee Young",
+      "affiliation": "Seoul National University"
+    },
+    {
+      "name": "Yang, Tae-Jin",
+      "affiliation": "Seoul National University"
     }
   ],
   "license": "MIT",
