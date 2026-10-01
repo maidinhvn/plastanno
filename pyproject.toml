@@ -9,7 +9,15 @@ description = "Dual-evidence, confidence-aware plastid genome (plastome) annotat
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
-authors = [{ name = "Trinh Hoai Vu", email = "thvu@agu.edu.vn" }]
+authors = [
+    { name = "Trinh Hoai Vu" },
+    { name = "Jickerson Pitogo Lado" },
+    { name = "Faizal Maulana" },
+    { name = "Huynh Cao The Cuong" },
+    { name = "Young Sang Park" },
+    { name = "Jee Young Park" },
+    { name = "Tae-Jin Yang" },
+]
 keywords = ["plastome", "chloroplast", "genome annotation", "bioinformatics"]
 classifiers = [
     "Programming Language :: Python :: 3",
