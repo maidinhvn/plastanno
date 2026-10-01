@@ -1,0 +1,27 @@
+{
+  "title": "Plastanno",
+  "upload_type": "software",
+  "description": "<p>Plastanno annotates plastid (chloroplast) genomes (CDS, tRNA and rRNA) from a FASTA file. Two independent engines (Exonerate protein2genome and profile HMMs) propose candidates, a single selector keeps one feature per locus, and every feature carries a review flag and its provenance. The reference database is archived separately on Zenodo (doi:10.5281/zenodo.20807994) and downloaded with <code>plastanno fetch-db</code>.</p>",
+  "creators": [
+    {
+      "name": "Trinh, Hoai Vu",
+      "affiliation": "Seoul National University; An Giang University",
+      "orcid": "0000-0001-8178-0800"
+    }
+  ],
+  "license": "MIT",
+  "keywords": [
+    "plastome",
+    "chloroplast genome",
+    "genome annotation",
+    "bioinformatics"
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "10.5281/zenodo.20807994",
+      "relation": "requires",
+      "scheme": "doi",
+      "resource_type": "dataset"
+    }
+  ]
+}

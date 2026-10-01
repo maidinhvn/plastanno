@@ -1,0 +1,35 @@
+cff-version: 1.2.0
+message: >-
+  If you use Plastanno, please cite it with the metadata below, and cite the
+  reference database it downloads (Zenodo, doi:10.5281/zenodo.20807994).
+type: software
+title: "Plastanno"
+abstract: >-
+  Plastanno annotates plastid (chloroplast) genomes -- CDS, tRNA and rRNA -- from
+  a FASTA file. Two independent engines (Exonerate protein2genome and profile
+  HMMs) propose candidates, a single selector keeps one feature per locus, and
+  every feature carries a review flag and its provenance.
+authors:
+  - family-names: "Trinh"
+    given-names: "Hoai Vu"
+    orcid: "https://orcid.org/0000-0001-8178-0800"
+    email: "thvu@agu.edu.vn"
+    affiliation: "Seoul National University; An Giang University"
+version: "3.1.0"
+date-released: "2026-10-01"
+license: MIT
+repository-code: "https://github.com/maidinhvn/plastanno"
+keywords:
+  - plastome
+  - chloroplast genome
+  - genome annotation
+  - bioinformatics
+references:
+  - type: database
+    title: "Plastanno: reference databases"
+    authors:
+      - family-names: "Trinh"
+        given-names: "Hoai Vu"
+        orcid: "https://orcid.org/0000-0001-8178-0800"
+    doi: "10.5281/zenodo.20807994"
+    license: CC-BY-4.0
